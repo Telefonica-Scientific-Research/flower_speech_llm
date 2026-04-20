@@ -9,6 +9,7 @@ description = "Federated Learning with SpeechLLM (WavLM + TinyLlama), PyTorch Li
 license = "Apache-2.0"
 dependencies = [
     "flwr[simulation]>=1.26.1",
+    "flwr-datasets>=0.6.0",
     "pytorch-lightning>=2.0.0",
     "torch>=2.0.0",
     "torchaudio>=2.0.0",
@@ -21,11 +22,14 @@ dependencies = [
     "peft>=0.10.0",
 ]
 
+[project.optional-dependencies]
+dev = []
+
 [tool.hatch.build.targets.wheel]
 packages = ["."]
 
 [tool.flwr.app]
-publisher = "mnabih"
+publisher = "luquesky"
 
 [tool.flwr.app.components]
 serverapp = "flower_speech_llm.server_app:app"
@@ -69,9 +73,10 @@ lr-decay-every  = 10
 fedprox-mu = 0.0  # Set > 0 to enable FedProx (e.g. 0.01)
 
 # ---- Data Config ----
-csv-train-dir = "./fl_multilingual"
-csv-dev-dir   = "./fl_MLS_dev_speaker"
-csv-test-dir  = "./fl_MLS_test"
+# Use absolute paths (Flower installs apps to ~/.flwr/apps/, so relative paths won't work).
+csv-train-dir = "/home/id02619@hi.inet/repos/FL/flower_speech_llm/flower_speech_llm/fl_multilingual"
+csv-dev-dir   = "/home/id02619@hi.inet/repos/FL/flower_speech_llm/flower_speech_llm/fl_MLS_dev_speaker"
+csv-test-dir  = "/home/id02619@hi.inet/repos/FL/flower_speech_llm/flower_speech_llm/fl_MLS_test"
 
 # ---- Checkpoint Config ----
 checkpoint-dir    = "FL_SLAM_checkpoints"
@@ -95,10 +100,26 @@ pretrained-checkpoint = ""   # Set to path of .ckpt to resume from a checkpoint
 # Docs: https://flower.ai/docs/framework/ref-flower-configuration.html
 #######################################################################
 
+
+#######################################################################
+# CONFIGURATION MIGRATION NOTICE:
+#
+# What was previously called "federation config" for SuperLink
+# connections in pyproject.toml has been renamed and moved.
+#
+# These settings are now **SuperLink connection configuration**
+# and are defined in the Flower configuration file.
+#
+# The entries below are commented out intentionally and are kept
+# only as a migration reference.
+#
+# Docs: https://flower.ai/docs/framework/ref-flower-configuration.html
+#######################################################################
+
 # [tool.flwr.federations]
-# default = "local-simulation"
+default = "local-simulation"
 
 # [tool.flwr.federations.local-simulation]
-# options.num-supernodes = 316
-# options.backend.client-resources.num-cpus = 12
-# options.backend.client-resources.num-gpus = 1 ## 4 clients en each GPU
+options.num-supernodes = 316
+options.backend.client-resources.num-cpus = 4
+options.backend.client-resources.num-gpus = 1.0  # 1 full GPU per client = max 4 concurrent clients on 4xL40S

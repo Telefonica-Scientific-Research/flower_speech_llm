@@ -138,7 +138,7 @@ uv venv --python 3.12
 source .venv/bin/activate
 
 # Install the project in editable mode
-uv pip install -e ".[dev]"
+uv pip install -e .
 ```
 
 Or install all dependencies directly:
@@ -176,7 +176,7 @@ python -c "from flower_speech_llm import client_app; print('OK')"
 python flower_speech_llm/prepare_mls_fl.py --languages all --output-dir ./mls_audio
 ```
 
-This downloads Multilingual LibriSpeech (8 languages: English, German, Dutch, French, Spanish, Italian, Portuguese, Polish) and creates per-speaker CSV files.
+This downloads Multilingual LibriSpeech (8 languages: English, German, Dutch, French, Spanish, Italian, Portuguese, Polish) and creates per-client(speaker) CSV files.
 
 ### Create FL Partitions
 
