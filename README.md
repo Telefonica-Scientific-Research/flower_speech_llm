@@ -8,31 +8,31 @@ Federated learning for Speech LLMs using [Flower](https://flower.ai/) and PyTorc
 
 ## Supported Models
 
-### Speech-LLM (WavLM + TinyLlama)
+### Speech-LLM (Encoder + Connector + LLM)
 
-Modular three-stage pipeline for speech understanding tasks (transcription, gender, emotion, age, accent, speech activity).
+Modular three-stage pipeline for speech understanding tasks (transcription, gender, emotion, age, accent, speech activity). The audio encoder and LLM are configurable — any HuggingFace-compatible encoder (WavLM, HuBERT, Wav2Vec2, Whisper) and causal LLM can be used.
 
 ```
-Audio (waveform) → WavLM Encoder (frozen) → Connector (Linear) → TinyLlama 1.1B (LoRA)
-                                                                        ↓
-                                              { "Transcript": "...", "Gender": "male", ... }
+Audio (waveform) → Audio Encoder (frozen) → Connector (Linear) → LLM (LoRA)
+                                                                     ↓
+                                           { "Transcript": "...", "Gender": "male", ... }
 ```
 
-- **Encoder**: `microsoft/wavlm-large` (1024-dim, frozen by default)
+- **Encoder**: Any HuggingFace audio encoder — default: `microsoft/wavlm-large` (1024-dim, frozen by default). Also supports HuBERT, Wav2Vec2, and Whisper via `audio-encoder-name` config
 - **Connector**: Linear / LinearPool / CNN (fully trainable)
-- **LLM**: `TinyLlama/TinyLlama-1.1B-Chat-v1.0` with LoRA (r=8, alpha=16)
+- **LLM**: Any HuggingFace causal LLM — default: `TinyLlama/TinyLlama-1.1B-Chat-v1.0` with LoRA (r=8, alpha=16). Configurable via `llm-name`
 
 ### Voxtral (End-to-End Multimodal)
 
 [Voxtral Mini 3B](https://huggingface.co/mistralai/Voxtral-Mini-3B-2507) — Mistral's end-to-end speech-language model. No separate encoder or connector needed.
 
 ```
-Audio (waveform) → Voxtral Audio Tower (frozen) → Multi-Modal Projector (trainable) → LLM (LoRA)
-                                                                                          ↓
-                                                                                    Transcription
+Audio (waveform) → Voxtral Audio-Encoder (frozen) → Multi-Modal Projector (trainable) → LLM (LoRA)
+                                                                                            ↓
+                                                                                      Transcription
 ```
 
-- **Audio Tower**: Frozen (optional LoRA with `finetune-encoder = true`)
+- **Audio-Encoder**: Frozen (optional LoRA with `finetune-encoder = true`)
 - **Projector**: Fully trainable multi-modal connector
 - **LLM**: Mistral-based language model with LoRA on Q/K/V/O projections
 - **Multilingual**: Per-sample language tags used in prompts
