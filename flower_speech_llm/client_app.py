@@ -13,6 +13,9 @@ from flwr.clientapp import ClientApp
 
 from .trainer import SpeechLLMLightning
 from .dataset import MyCollator, build_dataloaders_from_csvs
+from .trainer_voxtral import VoxtralLightning
+from .model.voxtral import get_voxtral
+from .dataset_voxtral import build_voxtral_dataloaders
 
 from pytorch_lightning.loggers import WandbLogger
 
@@ -72,25 +75,43 @@ def arrays_to_state_dict(model, arrays):
 
 # ---------> Build Model from Context <---------
 
-def build_model(context: Context) -> SpeechLLMLightning:
-    """Instantiate SpeechLLMLightning from run_config."""
+def build_model(context: Context):
+    """Instantiate model from run_config. Returns SpeechLLMLightning or VoxtralLightning."""
     cfg = context.run_config
-    model_config = {
-        "audio_enc_dim":        int(cfg.get("audio-enc-dim", 1024)),
-        "llm_dim":              int(cfg.get("llm-dim", 2048)),
-        "audio_encoder_name":   cfg.get("audio-encoder-name", "microsoft/wavlm-large"),
-        "connector_name":       cfg.get("connector-name", "linear"),
-        "llm_name":             cfg.get("llm-name", "TinyLlama/TinyLlama-1.1B-Chat-v1.0"),
-        "finetune_encoder":     bool(cfg.get("finetune-encoder", False)),
-        "connector_k":          int(cfg.get("connector-k", 2)),
-        "use_lora":             bool(cfg.get("use-lora", True)),
-        "lora_r":               int(cfg.get("lora-r", 8)),
-        "lora_alpha":           int(cfg.get("lora-alpha", 16)),
-        "max_lr":               float(cfg.get("max-lr", 1e-4)),
-        "total_training_step":  int(cfg.get("total-training-step", 10_000_000)),
-        "warmup_steps":         int(cfg.get("warmup-steps", 100)),
-    }
-    return SpeechLLMLightning(**model_config)
+    model_type = cfg.get("model-type", "speech-llm")
+
+    if model_type == "voxtral":
+        processor, model = get_voxtral(
+            model_name=cfg.get("voxtral-model-name", "mistralai/Voxtral-Mini-3B-2507"),
+            use_lora=bool(cfg.get("use-lora", True)),
+            lora_r=int(cfg.get("lora-r", 8)),
+            lora_alpha=int(cfg.get("lora-alpha", 32)),
+            finetune_encoder=bool(cfg.get("finetune-encoder", False)),
+            cache_dir=cfg.get("model-cache-dir", ""),
+        )
+        return VoxtralLightning(
+            model=model, processor=processor,
+            max_lr=float(cfg.get("max-lr", 5e-5)),
+            warmup_steps=int(cfg.get("warmup-steps", 100)),
+            total_training_step=int(cfg.get("total-training-step", 10_000_000)),
+        )
+    else:
+        model_config = {
+            "audio_enc_dim":        int(cfg.get("audio-enc-dim", 1024)),
+            "llm_dim":              int(cfg.get("llm-dim", 2048)),
+            "audio_encoder_name":   cfg.get("audio-encoder-name", "microsoft/wavlm-large"),
+            "connector_name":       cfg.get("connector-name", "linear"),
+            "llm_name":             cfg.get("llm-name", "TinyLlama/TinyLlama-1.1B-Chat-v1.0"),
+            "finetune_encoder":     bool(cfg.get("finetune-encoder", False)),
+            "connector_k":          int(cfg.get("connector-k", 2)),
+            "use_lora":             bool(cfg.get("use-lora", True)),
+            "lora_r":               int(cfg.get("lora-r", 8)),
+            "lora_alpha":           int(cfg.get("lora-alpha", 16)),
+            "max_lr":               float(cfg.get("max-lr", 1e-4)),
+            "total_training_step":  int(cfg.get("total-training-step", 10_000_000)),
+            "warmup_steps":         int(cfg.get("warmup-steps", 100)),
+        }
+        return SpeechLLMLightning(**model_config)
 
 
 # ---------> Build DataLoaders from Context <---------
@@ -99,25 +120,42 @@ def build_loaders(model, context: Context):
     """Build train and val DataLoaders for this client partition."""
     cfg = context.run_config
     partition_id = context.node_config["partition-id"]
-    num_partitions = context.node_config["num-partitions"]
-
-    tokenizer = model.llm_tokenizer
-    audio_encoder_name = cfg.get("audio-encoder-name", "microsoft/wavlm-large")
-    collator = MyCollator(audio_encoder_name, tokenizer)
+    model_type = cfg.get("model-type", "speech-llm")
 
     csv_train_dir = cfg.get("csv-train-dir", "./fl_multilingual")
     csv_dev_dir   = cfg.get("csv-dev-dir",   "./fl_MLS_dev_speaker")
 
-    train_loaders = build_dataloaders_from_csvs(
-        csv_dir=csv_train_dir, my_collator=collator,
-        batch_size=int(cfg.get("train-batch-size", 4)),
-        num_workers=int(cfg.get("num-workers", 3)),
-        shuffle=True,
-    )
-    dev_loaders = build_dataloaders_from_csvs(
-        csv_dir=csv_dev_dir, my_collator=collator,
-        batch_size=1, num_workers=3, shuffle=False,
-    )
+    if model_type == "voxtral":
+        voxtral_model_name = cfg.get("voxtral-model-name", "mistralai/Voxtral-Mini-3B-2507")
+        train_loaders = build_voxtral_dataloaders(
+            csv_dir=csv_train_dir, processor=model.processor,
+            model_id=voxtral_model_name,
+            batch_size=int(cfg.get("train-batch-size", 2)),
+            num_workers=int(cfg.get("num-workers", 0)),
+            shuffle=True,
+            language=cfg.get("data-language", "en"),
+        )
+        dev_loaders = build_voxtral_dataloaders(
+            csv_dir=csv_dev_dir, processor=model.processor,
+            model_id=voxtral_model_name,
+            batch_size=1, num_workers=0, shuffle=False,
+            language=cfg.get("data-language", "en"),
+        )
+    else:
+        tokenizer = model.llm_tokenizer
+        audio_encoder_name = cfg.get("audio-encoder-name", "microsoft/wavlm-large")
+        collator = MyCollator(audio_encoder_name, tokenizer)
+
+        train_loaders = build_dataloaders_from_csvs(
+            csv_dir=csv_train_dir, my_collator=collator,
+            batch_size=int(cfg.get("train-batch-size", 4)),
+            num_workers=int(cfg.get("num-workers", 3)),
+            shuffle=True,
+        )
+        dev_loaders = build_dataloaders_from_csvs(
+            csv_dir=csv_dev_dir, my_collator=collator,
+            batch_size=1, num_workers=3, shuffle=False,
+        )
 
     train_loader = train_loaders[partition_id % len(train_loaders)]
     val_loader   = dev_loaders[partition_id % len(dev_loaders)]
@@ -244,6 +282,7 @@ def evaluate(msg: Message, context: Context) -> Message:
     _, val_loader = build_loaders(model, context)
 
     # Evaluate
+    cfg = context.run_config
     partition_id = context.node_config.get("partition-id", 0)
     wandb_logger = WandbLogger(
         project="speech-llm-fl",

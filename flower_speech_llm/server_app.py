@@ -13,6 +13,8 @@ from flwr.serverapp import Grid, ServerApp
 from flwr.serverapp.strategy import FedAvg
 
 from .trainer import SpeechLLMLightning
+from .trainer_voxtral import VoxtralLightning
+from .model.voxtral import get_voxtral
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -33,24 +35,40 @@ def get_trainable_parameters(model):
     return params, names
 
 
-def load_model_from_config(cfg: dict) -> SpeechLLMLightning:
-    """Instantiate SpeechLLMLightning from a config dict."""
-    model_config = {
-        "audio_enc_dim":        int(cfg.get("audio-enc-dim", 1024)),
-        "llm_dim":              int(cfg.get("llm-dim", 2048)),
-        "audio_encoder_name":   cfg.get("audio-encoder-name", "microsoft/wavlm-large"),
-        "connector_name":       cfg.get("connector-name", "linear"),
-        "llm_name":             cfg.get("llm-name", "TinyLlama/TinyLlama-1.1B-Chat-v1.0"),
-        "finetune_encoder":     bool(cfg.get("finetune-encoder", False)),
-        "connector_k":          int(cfg.get("connector-k", 2)),
-        "use_lora":             bool(cfg.get("use-lora", True)),
-        "lora_r":               int(cfg.get("lora-r", 8)),
-        "lora_alpha":           int(cfg.get("lora-alpha", 16)),
-        "max_lr":               float(cfg.get("max-lr", 1e-4)),
-        "total_training_step":  int(cfg.get("total-training-step", 10_000_000)),
-        "warmup_steps":         int(cfg.get("warmup-steps", 100)),
-    }
-    return SpeechLLMLightning(**model_config)
+def load_model_from_config(cfg: dict):
+    """Instantiate model from a config dict. Returns SpeechLLMLightning or VoxtralLightning."""
+    model_type = cfg.get("model-type", "speech-llm")
+
+    if model_type == "voxtral":
+        processor, model = get_voxtral(
+            model_name=cfg.get("voxtral-model-name", "mistralai/Voxtral-Mini-3B-2507"),
+            use_lora=bool(cfg.get("use-lora", True)),
+            lora_r=int(cfg.get("lora-r", 8)),
+            lora_alpha=int(cfg.get("lora-alpha", 32)),
+            finetune_encoder=bool(cfg.get("finetune-encoder", False)),
+            cache_dir=cfg.get("model-cache-dir", ""),
+        )
+        return VoxtralLightning(
+            model=model, processor=processor,
+            max_lr=float(cfg.get("max-lr", 5e-5)),
+        )
+    else:
+        model_config = {
+            "audio_enc_dim":        int(cfg.get("audio-enc-dim", 1024)),
+            "llm_dim":              int(cfg.get("llm-dim", 2048)),
+            "audio_encoder_name":   cfg.get("audio-encoder-name", "microsoft/wavlm-large"),
+            "connector_name":       cfg.get("connector-name", "linear"),
+            "llm_name":             cfg.get("llm-name", "TinyLlama/TinyLlama-1.1B-Chat-v1.0"),
+            "finetune_encoder":     bool(cfg.get("finetune-encoder", False)),
+            "connector_k":          int(cfg.get("connector-k", 2)),
+            "use_lora":             bool(cfg.get("use-lora", True)),
+            "lora_r":               int(cfg.get("lora-r", 8)),
+            "lora_alpha":           int(cfg.get("lora-alpha", 16)),
+            "max_lr":               float(cfg.get("max-lr", 1e-4)),
+            "total_training_step":  int(cfg.get("total-training-step", 10_000_000)),
+            "warmup_steps":         int(cfg.get("warmup-steps", 100)),
+        }
+        return SpeechLLMLightning(**model_config)
 
 
 # ---------> Custom FedAvg Strategy (Learning Rate Decay + Checkpointing) <---------
