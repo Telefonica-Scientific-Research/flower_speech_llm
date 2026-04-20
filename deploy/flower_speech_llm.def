@@ -1,0 +1,131 @@
+Bootstrap: docker
+From: pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel
+
+%labels
+    Author Telefonica-Scientific-Research
+    Version 1.0.1
+    Description Flower Speech-LLM federated learning (offline HPC image)
+
+%files
+    # Copy the flower_speech_llm package into the image
+    # Run from the repo root: singularity build flower_speech_llm.sif deploy/flower_speech_llm.def
+    . /opt/flower_speech_llm_repo
+
+%environment
+    export HF_HOME=/opt/hf_cache
+    export TRANSFORMERS_CACHE=/opt/hf_cache
+    export HF_HUB_OFFLINE=1
+    export TRANSFORMERS_OFFLINE=1
+    export WANDB_MODE=offline
+    export PATH=/opt/venv/bin:$PATH
+
+%post
+    # ----------------------------------------------------------------
+    # System dependencies
+    # ----------------------------------------------------------------
+    apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        curl \
+        build-essential \
+        libsndfile1 \
+        ffmpeg \
+        sox \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+    # ----------------------------------------------------------------
+    # Python virtual environment via uv
+    # ----------------------------------------------------------------
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH=/root/.local/bin:$PATH
+
+    uv venv /opt/venv --python 3.12
+    . /opt/venv/bin/activate
+
+    # ----------------------------------------------------------------
+    # Install flower_speech_llm + all dependencies
+    # ----------------------------------------------------------------
+    cd /opt/flower_speech_llm_repo
+    uv pip install -e .
+
+    # Additional runtime deps (not in pyproject.toml but useful)
+    uv pip install soundfile librosa
+
+    # ----------------------------------------------------------------
+    # Pre-download all HuggingFace models into the image
+    # (HPC nodes have NO internet access)
+    # ----------------------------------------------------------------
+    export HF_HOME=/opt/hf_cache
+    export TRANSFORMERS_CACHE=/opt/hf_cache
+    mkdir -p /opt/hf_cache
+
+    python -c "
+from transformers import AutoModel, AutoFeatureExtractor, AutoTokenizer, AutoModelForCausalLM
+from peft import LoraConfig
+
+print('=== Downloading microsoft/wavlm-large ===')
+AutoModel.from_pretrained('microsoft/wavlm-large')
+
+print('=== Downloading microsoft/wavlm-base (feature extractor) ===')
+AutoFeatureExtractor.from_pretrained('microsoft/wavlm-base')
+
+print('=== Downloading TinyLlama/TinyLlama-1.1B-Chat-v1.0 ===')
+AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
+AutoModelForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
+
+print('=== Downloading mistralai/Voxtral-Mini-3B-2507 ===')
+from transformers import VoxtralForConditionalGeneration, VoxtralProcessor
+VoxtralProcessor.from_pretrained('mistralai/Voxtral-Mini-3B-2507')
+VoxtralForConditionalGeneration.from_pretrained('mistralai/Voxtral-Mini-3B-2507')
+
+print('=== All models downloaded successfully ===')
+"
+
+    # ----------------------------------------------------------------
+    # Verify installations
+    # ----------------------------------------------------------------
+    echo "=== Verification ==="
+    python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.version.cuda}')"
+    python -c "import torchaudio; print(f'TorchAudio: {torchaudio.__version__}')"
+    python -c "import flwr; print(f'Flower: {flwr.__version__}')"
+    python -c "import pytorch_lightning; print(f'PyTorch Lightning: {pytorch_lightning.__version__}')"
+    python -c "import transformers; print(f'Transformers: {transformers.__version__}')"
+    python -c "import peft; print(f'PEFT: {peft.__version__}')"
+    python -c "from flower_speech_llm.trainer import SpeechLLMLightning; print('speech-llm import OK')"
+    python -c "from flower_speech_llm.model.voxtral import get_voxtral; print('voxtral import OK')"
+
+    # Show model cache size
+    du -sh /opt/hf_cache
+    echo "=== Build complete ==="
+
+%runscript
+    # Default: run flwr
+    exec /opt/venv/bin/flwr "$@"
+
+%help
+    Flower Speech-LLM container for offline HPC deployment.
+
+    Models pre-loaded in /opt/hf_cache:
+      - microsoft/wavlm-large    (audio encoder)
+      - microsoft/wavlm-base     (feature extractor)
+      - TinyLlama/TinyLlama-1.1B-Chat-v1.0  (LLM)
+      - mistralai/Voxtral-Mini-3B-2507      (Voxtral end-to-end)
+
+    Environment variables (set automatically):
+      HF_HOME=/opt/hf_cache
+      HF_HUB_OFFLINE=1
+      TRANSFORMERS_OFFLINE=1
+      WANDB_MODE=offline
+
+    Usage:
+      # Build (from repo root, with internet):
+      singularity build flower_speech_llm.sif deploy/flower_speech_llm.def
+
+      # Run FL experiment on HPC (no internet needed):
+      singularity exec --nv --bind /path/to/data:/data flower_speech_llm.sif \
+          flwr run /opt/flower_speech_llm_repo \
+          --run-config 'csv-train-dir="/data/fl_A1_mixed_316" csv-dev-dir="/data/fl_dev_316"'
+
+      # Or run directly:
+      singularity run --nv --bind /path/to/data:/data flower_speech_llm.sif \
+          run /opt/flower_speech_llm_repo \
+          --run-config 'csv-train-dir="/data/fl_A1_mixed_316" csv-dev-dir="/data/fl_dev_316"'
