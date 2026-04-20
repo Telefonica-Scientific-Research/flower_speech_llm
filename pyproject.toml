@@ -64,10 +64,9 @@ warmup-steps         = 100
 
 # ---- Voxtral Config (used when model-type = "voxtral") ----
 voxtral-model-name   = "mistralai/Voxtral-Mini-3B-2507"
-finetune-encoder     = false
 model-cache-dir      = ""
 data-language        = "en"
-# lora-r, lora-alpha, use-lora, finetune-encoder are shared with WavLM config above
+# lora-r, lora-alpha, use-lora, finetune-encoder are shared with speech-llm config above
 
 # ---- Training Config ----
 local-epochs          = 10
