@@ -43,7 +43,11 @@ fraction-evaluate   = 0.0
 min-fit-clients     = 2
 min-evaluate-clients = 2
 
-# ---- Model Config ----
+# ---- Model Selection ----
+# model-type = "speech-llm" (default) or "voxtral"
+model-type           = "speech-llm"
+
+# ---- Model Config (WavLM + TinyLlama pipeline) ----
 audio-enc-dim        = 1024
 llm-dim              = 2048
 audio-encoder-name   = "microsoft/wavlm-large"
@@ -57,6 +61,13 @@ lora-alpha           = 16
 max-lr               = 0.0001
 total-training-step  = 10000000
 warmup-steps         = 100
+
+# ---- Voxtral Config (used when model-type = "voxtral") ----
+voxtral-model-name   = "mistralai/Voxtral-Mini-3B-2507"
+finetune-encoder     = false
+model-cache-dir      = ""
+data-language        = "en"
+# lora-r, lora-alpha, use-lora, finetune-encoder are shared with WavLM config above
 
 # ---- Training Config ----
 local-epochs          = 10
