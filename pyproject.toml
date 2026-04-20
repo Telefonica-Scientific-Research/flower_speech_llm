@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "speech-llm-fl"
+name = "flower-speech-llm"
 version = "1.0.1"
 description = "Federated Learning with SpeechLLM (WavLM + TinyLlama), PyTorch Lightning, and Flower"
 license = "Apache-2.0"
@@ -28,8 +28,8 @@ packages = ["."]
 publisher = "mnabih"
 
 [tool.flwr.app.components]
-serverapp = "speech_llm_fl.server_app:app"
-clientapp = "speech_llm_fl.client_app:app"
+serverapp = "flower_speech_llm.server_app:app"
+clientapp = "flower_speech_llm.client_app:app"
 
 # ---- Federation Config ----
 [tool.flwr.app.config]
