@@ -1,150 +1,382 @@
+# Federated SpeechLLM with Flower
 
-# Python Project Template
+Federated learning for Speech LLMs with Flower and PyTorch Lightning. Trains a WavLM + TinyLlama model with LoRA across distributed clients on the Multilingual LibriSpeech corpus. Supports FedAvg/FedProx strategies, speaker-based and IID partitioning, per-round LR decay, W&B logging, and multi-GPU Ray simulation. Only adapter weights are shared — raw audio never leaves the client.
 
-A low dependency and really simple to start project template for Python Projects.
-
-### HOW TO USE THIS TEMPLATE
-
-> **DO NOT FORK** this is meant to be used from **[Use this template](https://github.com/maviva/python-project-silver-template/generate)** feature.
-
-1. Click on **[Use this template](https://github.com/maviva/python-project-silver-template/generate)**
-3. Give a name to your project  
-   (e.g. `my_awesome_project` recommendation is to use all lowercase and underscores separation for repo names.)
-3. Wait until the first run of CI finishes  
-   (Github Actions will process the template and commit to your new repo)
-4. If you want [codecov](https://about.codecov.io/sign-up/) Reports and Automatic Release to [PyPI](https://pypi.org)  
-  On the new repository `settings->secrets` add your `PYPI_API_TOKEN` and `CODECOV_TOKEN` (get the tokens on respective websites)
-4. Read the file [CONTRIBUTING.md](CONTRIBUTING.md)
-5. Then clone your new project and happy coding!
-
-> **NOTE**: **WAIT** until first CI run on github actions before cloning your new project.
-
-### What is included on this template?
-
-- 📦 A basic [setup.py](setup.py) file to provide installation, packaging and distribution for your project.  
-  Template uses setuptools because it's the de-facto standard for Python packages, you can run `make switch-to-poetry` later if you want.
-- 🤖 A [Makefile](Makefile) with the most useful commands to install, test, lint, format and release your project.
-- 📃 Documentation structure using [mkdocs](http://www.mkdocs.org)
-- 💬 Auto generation of change log using **gitchangelog** to keep a HISTORY.md file automatically based on your commit history on every release.
-- 🐋 A simple [Containerfile](Containerfile) to build a container image for your project.  
-  `Containerfile` is a more open standard for building container images than Dockerfile, you can use buildah or docker with this file.
-- 🧪 Testing structure using [pytest](https://docs.pytest.org/en/latest/)
-- ✅ Code linting using [flake8](https://flake8.pycqa.org/en/latest/)
-- 📊 Code coverage reports using [codecov](https://about.codecov.io/sign-up/)
-- 🛳️ Automatic release to [PyPI](https://pypi.org) using [twine](https://twine.readthedocs.io/en/latest/) and github actions.
-- 🎯 Entry points to execute your program using `python -m <flower_speech_llm>` or `$ flower_speech_llm` with basic CLI argument parsing.
-- 🔄 Continuous integration using [Github Actions](.github/workflows/) with jobs to lint, test and release your project on Linux, Mac and Windows environments.
-
-### Repository quality
-
-<p align="center">
-<img src = "figs/info_levels.png" alt="Repository quality"/>
-</p>
-
-
-<!--  DELETE THE LINES ABOVE THIS AND WRITE YOUR PROJECT README BELOW -->
+> **Based on** [`@mnabih/speech_llm_fl`](https://flower.ai/apps/mnabih/speech_llm_fl/) by **Mohamed Nabih** — the original Flower Hub app for federated SpeechLLM training. This repository extends the original with compatibility fixes for Flower 1.29+, new experiment tooling, and additional features. See [Changes from Original](#changes-from-original) for full details.
 
 ---
-# flower_speech_llm
 
-[![codecov](https://codecov.io/gh/Telefonica-Scientific-Research/flower_speech_llm/branch/main/graph/badge.svg?token=flower_speech_llm_token_here)](https://codecov.io/gh/Telefonica-Scientific-Research/flower_speech_llm)
-[![CI](https://github.com/Telefonica-Scientific-Research/flower_speech_llm/actions/workflows/main.yml/badge.svg)](https://github.com/Telefonica-Scientific-Research/flower_speech_llm/actions/workflows/main.yml)
+## Key Features
 
-Brief abstract of the research
-[_"Title"_](https://journal.net/forum?id=Title)
+- 🎙️ **Multimodal Architecture** — WavLM audio encoder + connector + TinyLlama LLM for end-to-end speech understanding (transcription, gender, emotion, age, accent, speech activity)
+- 🔒 **Privacy-Preserving** — Only LoRA weights + connector are shared; raw audio never leaves the client
+- 🔁 **FedAvg + FedProx** — Custom `SpeechLLMFedAvg` strategy with per-round LR decay, configurable client sampling, and automatic checkpointing. Optional FedProx proximal term for non-IID robustness
+- ⚡ **LoRA Fine-Tuning** — Parameter-efficient federation via PEFT, drastically reducing communication cost
+- 📊 **W&B Logging** — Per-client training metrics and validation predictions logged to Weights & Biases
+- 💾 **Checkpoint Resumption** — Resume from any `.ckpt` via config
+- 🖥️ **Multi-GPU Simulation** — Ray backend with configurable client-to-GPU mapping and Tensor Core optimization
+- 🌍 **Multilingual Data Pipeline** — Scripts to download MLS (8 languages), create IID or speaker-based FL partitions
 
+---
 
-## Description
+## Changes from Original
 
-Description
+This repository is a fork/extension of [`@mnabih/speech_llm_fl`](https://flower.ai/apps/mnabih/speech_llm_fl/) by **Mohamed Nabih**. The following changes were made to support **Flower 1.29+**, add missing components, and extend functionality.
 
-<p align="center">
-<img src = "figs/python-logo.svg" alt="Alternative caption 1"/>
-</p>
-<p align="center">
-Fig. 1. Caption 1
-</p>
+### API Compatibility (Flower 1.29+)
 
+The original app targeted an older Flower version. These changes were required to run on `flwr>=1.29`:
 
-### Subsection
+| Change | Files |
+|--------|-------|
+| `ArrayRecord.to_numpy_arrays()` → `.to_numpy_ndarrays()` | `client_app.py`, `server_app.py` |
+| `FedAvg(min_fit_clients=...)` → `FedAvg(min_train_nodes=...)` | `server_app.py` |
+| `FedAvg(min_evaluate_clients=...)` → `FedAvg(min_evaluate_nodes=...)` | `server_app.py` |
+| `get_round_config()` → `configure_train()` override | `server_app.py` |
+| Added `from flwr.common.record import ConfigRecord` | `server_app.py` |
+| Bare imports → relative imports (`.trainer`, `.dataset`, `.model.*`) | All Python files |
+| Project name `speech_llm_fl` → `speech-llm-fl` (hyphens required) | `pyproject.toml` |
 
-Description
+### Missing `model/` Package (New)
 
+The original Flower Hub app did **not** include the `model/` subpackage that `trainer.py` imports from. This repo provides it:
+
+| File | Contents |
+|------|----------|
+| `model/__init__.py` | Package init |
+| `model/encoder.py` | `TransformerAudioEncoder` (WavLM/HuBERT/Wav2Vec2 wrapper), `WhisperEncoder`, `get_audio_encoder()` factory |
+| `model/connector.py` | `LinearConnector`, `LinearPoolConnector`, `CNNConnector`, `get_connector()` factory |
+| `model/llm.py` | `get_llm()` — loads a causal LLM with optional LoRA via PEFT |
+
+### New Features
+
+| Feature | Details |
+|---------|---------|
+| **FedProx support** | `FedProxCallback` in `client_app.py` — adds proximal term `(mu/2) * \|\|w - w_global\|\|²` to loss. Enable via `fedprox-mu` config |
+| **W&B integration** | `WandbLogger` wired into both train and evaluate Trainers, grouped by experiment |
+| **Tensor Core optimization** | `torch.set_float32_matmul_precision("medium")` for faster training on Ampere+ GPUs |
+| **Safe config reading** | Client reads server config via `.get()` with fallbacks and warning messages instead of hard indexing |
+
+### New Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `prepare_mls_fl.py` | Download MLS (8 languages) from HuggingFace, save audio as FLAC, create per-speaker CSVs |
+| `create_experiment_partitions.py` | Generate IID (mixed-language) and non-IID (one-speaker) FL client partitions using `flwr-datasets` |
+| `evaluate_fl_model.py` | Evaluate FL checkpoints on MLS test sets, report per-language WER |
+| `run_experiments.sh` | Run A1/B1/B2 experiments sequentially with evaluation |
+
+### Bug Fixes
+
+| Fix | Details |
+|-----|---------|
+| `TransformerAudioEnoder` → `TransformerAudioEncoder` | Typo in class name (trainer.py, encoder.py) |
+| `msg.content["config"]["local-epochs"]` → safe `.get()` chain | Prevents `KeyError` when server config is empty |
+
+---
+
+## Architecture
+
+| File | Description |
+|---|---|
+| `client_app.py` | `ClientApp` with `@app.train()` and `@app.evaluate()` handlers — loads weights, runs local training, returns updated parameters and metrics |
+| `server_app.py` | `ServerApp` with `SpeechLLMFedAvg` strategy — per-round LR decay, aggregation, and checkpoint saving |
+| `trainer.py` | `SpeechLLMLightning` — PyTorch Lightning module: full SpeechLLM forward pass, training/validation/test steps, metric logging |
+| `dataset.py` | `InstructionalAudioDataset`, `MyCollator`, `build_dataloaders_from_csvs` — CSV-based audio dataset per client |
+| `model/` | Audio encoder, connector, and LLM wrappers (see above) |
+| `pyproject.toml` | All federation, model, training, data, and checkpoint config |
+
+### Model Architecture
+
+```
+Audio Input (waveform)
+        │
+        ▼
+ WavLM Encoder (frozen or finetuned)
+        │
+        ▼
+   Connector (Linear / LinearPool / CNN)
+        │
+        ▼
+  [Pre-prompt embeddings] + [Speech embeddings] + [Post-prompt embeddings]
+        │
+        ▼
+   TinyLlama LLM (LoRA fine-tuned)
+        │
+        ▼
+  Structured JSON output:
+  { "Transcript": "...", "Gender": "male", "Emotion": "neutral", ... }
+```
+
+### Federated Learning Process
+
+1. **Initialization** — Server loads global `SpeechLLMLightning` model (optionally from a pretrained checkpoint) and extracts only trainable parameters (LoRA + connector)
+2. **Round Config** — Server computes a decayed learning rate via `configure_train()` and injects it into the config sent to sampled clients
+3. **Local Training** — Each client loads received weights, trains for `local-epochs` × `train-batch-per-epoch` steps with PyTorch Lightning (optionally with FedProx proximal term)
+4. **Aggregation** — Server performs weighted FedAvg over client updates proportional to dataset sizes
+5. **Checkpointing** — Aggregated model saved to disk after every round; final model saved as `final_model.pt`
+
+---
+
+## Installation
+
+### Prerequisites
+
+- **Python 3.10+**
+- **CUDA-capable GPU** (strongly recommended)
+- **uv** package manager ([install uv](https://docs.astral.sh/uv/getting-started/installation/))
+
+### Setup with uv
+
+```bash
+# Clone the repository
+git clone https://github.com/Telefonica-Scientific-Research/flower_speech_llm.git
+cd flower_speech_llm
+
+# Create virtual environment and install dependencies
+uv venv --python 3.12
+source .venv/bin/activate
+
+# Install the project in editable mode
+uv pip install -e ".[dev]"
+```
+
+Or install all dependencies directly:
+
+```bash
+uv pip install \
+  "flwr[simulation]>=1.29.0" \
+  "pytorch-lightning>=2.0.0" \
+  "torch>=2.4.0" \
+  "torchaudio>=2.4.0" \
+  "transformers>=4.40.0" \
+  "datasets>=2.0.0" \
+  "pandas>=1.5.0" \
+  "jiwer>=3.0.0" \
+  "wandb>=0.15.0" \
+  "peft>=0.10.0" \
+  "flwr-datasets[audio]>=0.6.0" \
+  "soundfile>=0.12.0"
+```
+
+### Verify installation
+
+```bash
+python -c "import flwr; print('Flower:', flwr.__version__)"
+python -c "from speech_llm_fl import client_app; print('OK')"
+```
+
+---
+
+## Data Preparation
+
+### Download MLS Dataset
+
+```bash
+python Fed-SpeechLLM/prepare_mls_fl.py --languages all --output-dir ./mls_audio
+```
+
+This downloads Multilingual LibriSpeech (8 languages: English, German, Dutch, French, Spanish, Italian, Portuguese, Polish) and creates per-speaker CSV files.
+
+### Create FL Partitions
+
+```bash
+python Fed-SpeechLLM/create_experiment_partitions.py --base-dir ./Fed-SpeechLLM
+```
+
+This generates three experiment settings:
+
+| Setting | Description | Clients |
+|---------|-------------|---------|
+| **A1** (IID) | Multilingual-mixed random partitioning | 316 |
+| **B1** (Non-IID) | One speaker per client | 316 |
+| **B2** (Non-IID + FedProx) | Same as B1, with FedProx enabled | 316 |
+
+### CSV Format
+
+Each client CSV has the following columns:
+
+| Column | Description |
+|---|---|
+| `audio_path` | Path to audio file (16kHz, FLAC/WAV) |
+| `transcript` | Ground-truth transcription |
+| `gender` | Speaker gender |
+| `emotion` | Emotion label |
+| `age` | Age group |
+| `accent` | Accent/language label |
+| `isspeech` | Whether audio contains speech |
+
+---
+
+## Run Experiments
+
+### Quick Start
+
+```bash
+flwr run . --run-config 'csv-train-dir="./Fed-SpeechLLM/fl_A1_mixed_316" csv-dev-dir="./Fed-SpeechLLM/fl_dev_316"'
+```
+
+### Experiment Settings
+
+```bash
+# A1: Mixed-multilingual + FedAvg
+flwr run . --run-config 'csv-train-dir="./Fed-SpeechLLM/fl_A1_mixed_316" csv-dev-dir="./Fed-SpeechLLM/fl_dev_316"'
+
+# B1: One-speaker + FedAvg
+flwr run . --run-config 'csv-train-dir="./Fed-SpeechLLM/fl_B1_speaker_316" csv-dev-dir="./Fed-SpeechLLM/fl_dev_316"'
+
+# B2: One-speaker + FedProx (mu=0.01)
+flwr run . --run-config 'csv-train-dir="./Fed-SpeechLLM/fl_B1_speaker_316" csv-dev-dir="./Fed-SpeechLLM/fl_dev_316" fedprox-mu=0.01'
+```
+
+### Override Settings at Runtime
+
+```bash
+flwr run . --run-config 'num-server-rounds=10 local-epochs=5 max-lr=0.00005'
+```
+
+### Resume from Checkpoint
+
+```bash
+flwr run . --run-config 'pretrained-checkpoint="FL_SLAM_checkpoints/Checkpoint-round-50.ckpt" checkpoint-offset=50'
+```
+
+### Restrict to Specific GPUs
+
+```bash
+CUDA_VISIBLE_DEVICES=0 flwr run . --run-config 'csv-train-dir="./Fed-SpeechLLM/fl_A1_mixed_316" csv-dev-dir="./Fed-SpeechLLM/fl_dev_316"'
+```
+
+### Monitor a Run
+
+```bash
+flwr ls                           # List all runs
+flwr log <run_id>                 # Stream logs
+flwr stop <run_id>                # Stop a run
+```
+
+### Evaluate a Checkpoint
+
+```bash
+python Fed-SpeechLLM/evaluate_fl_model.py \
+  --checkpoint FL_SLAM_checkpoints/final_model.pt \
+  --test-dir Fed-SpeechLLM/fl_MLS_test
+```
+
+---
+
+## Configuration
+
+All settings are in `pyproject.toml`. No code changes needed.
+
+### Federation
+
+```toml
+num-server-rounds    = 40      # Total FL rounds
+fraction-fit         = 0.3     # Fraction of clients sampled per round
+fraction-evaluate    = 0.0
+min-fit-clients      = 2
+```
+
+### Model
+
+```toml
+audio-encoder-name = "microsoft/wavlm-large"
+llm-name           = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+connector-name     = "linear"       # "linear", "linear-pool", or "cnn"
+use-lora           = true
+lora-r             = 8
+lora-alpha         = 16
+```
+
+### Training
+
+```toml
+local-epochs          = 10
+train-batch-size      = 4
+train-batch-per-epoch = 200
+grad-accumulate-steps = 4
+max-lr                = 0.0001
+```
+
+### FedProx
+
+```toml
+fedprox-mu = 0.0    # Set > 0 to enable (e.g. 0.01)
+```
+
+### LR Decay
+
+```toml
+lr-decay-factor = 0.9    # LR at round r = max-lr × factor^(r // decay-every)
+lr-decay-every  = 10
+```
+
+---
+
+## Project Structure
+
+```
+speech-llm-fl/
+├── Fed-SpeechLLM/
+│   ├── __init__.py
+│   ├── client_app.py                   # Flower ClientApp (train + evaluate)
+│   ├── server_app.py                   # Flower ServerApp (SpeechLLMFedAvg)
+│   ├── trainer.py                      # SpeechLLMLightning model
+│   ├── dataset.py                      # Dataset and dataloader utilities
+│   ├── model/
+│   │   ├── encoder.py                  # WavLM / Whisper encoder wrappers
+│   │   ├── connector.py                # Linear / LinearPool / CNN connectors
+│   │   └── llm.py                      # LLM + LoRA loader
+│   ├── prepare_mls_fl.py              # MLS dataset download + preparation
+│   ├── create_experiment_partitions.py # FL partition generator
+│   ├── evaluate_fl_model.py           # Checkpoint evaluation script
+│   └── run_experiments.sh             # Batch experiment runner
+├── pyproject.toml                      # Project config + Flower settings
+└── README.md
+```
+
+---
+
+## Metrics Tracked
+
+| Metric | Description |
+|---|---|
+| `train_loss` | Cross-entropy loss on local training data |
+| `val/loss` | Validation loss |
+| `val/wer` | Word Error Rate on transcript predictions |
+| `val/gender` | Gender classification accuracy |
+| `val/emotion` | Emotion classification accuracy |
+| `val/age` | Age group classification accuracy |
+| `val/accent` | Accent classification accuracy |
+| `val/speech_activity` | Speech activity detection accuracy |
+
+---
 
 ## Results
 
-Main Results
+Performance comparison of **WavLM** vs. **Whisper** encoders, measured in Word Error Rate (WER ↓) on LibriSpeech (LS) and Multilingual LibriSpeech (MLS) test sets. Central training serves as the upper bound.
 
-<table style="border-collapse: collapse; width: 100%; height: 108px;" align="center">
-   <thead>
-      <tr style="height: 18px;">
-         <td style="width: 20%; height: 18px; text-align: center;" align="center"><strong>Dataset</strong></td>
-         <td style="width: 20%; height: 18px; text-align: center;" align="center"><strong>Rows</strong></td>
-         <td style="width: 20%; height: 18px; text-align: center;" align="center"><strong>Num. Feats</strong></td>
-         <td style="width: 20%; height: 18px; text-align: center;" align="center"><strong>Cat. Feats</strong></td>
-         <td style="width: 20%; height: 18px; text-align: center;" align="center"><strong>Task</strong></td>
-      </tr>
-   </thead>
-   <tbody>
-      <tr style="height: 18px;">
-         <td style="width: 20%; height: 18px; text-align: center;" align="center"><a href="https://community.fico.com/s/explainable-machine-learning-challenge">HELOC</a></td>
-         <td style="width: 20%; height: 18px; text-align: center;" align="center">9871</td>
-         <td style="width: 20%; height: 18px; text-align: center;" align="center">21</td>
-         <td style="width: 20%; height: 18px; text-align: center;" align="center">2</td>
-         <td style="width: 20%; height: 18px; text-align: center;" align="center">Binary</td>
-      </tr>
-   </tbody>
-</table>
+| Setting | WavLM (Round=100) LS | WavLM (Round=100) MLS | Whisper (Round=40) LS | Whisper (Round=40) MLS |
+|---|---|---|---|---|
+| **Central Training** ⭐ | **6.1** | **18.4** | 6.4 | **16.4** |
+| FL Sample Cluster | 9.7 | 19.6 | 7.7 | 16.4 |
 
+> ⭐ Central training is the upper bound (non-federated). Lower WER is better.
 
-## How to use the code
+---
 
-### Install it from PyPI
+## Credits
 
-```bash
-pip install flower_speech_llm
-```
+- **Original app**: [`@mnabih/speech_llm_fl`](https://flower.ai/apps/mnabih/speech_llm_fl/) by **Mohamed Nabih** — Federated SpeechLLM with Flower
+- **Flower Framework**: [flower.ai](https://flower.ai/)
+- **WavLM**: [microsoft/wavlm-large](https://huggingface.co/microsoft/wavlm-large)
+- **TinyLlama**: [TinyLlama/TinyLlama-1.1B-Chat-v1.0](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0)
+- **LoRA / PEFT**: [huggingface/peft](https://github.com/huggingface/peft)
+- **PyTorch Lightning**: [lightning.ai](https://lightning.ai/docs/pytorch/stable/)
 
-### Usage
+---
 
-```py
-from flower_speech_llm import BaseClass
-from flower_speech_llm import base_function
+## License
 
-BaseClass().base_method()
-base_function()
-```
-
-```bash
-$ python -m flower_speech_llm
-#or
-$ flower_speech_llm
-```
-
-
-### Requirements
-
-```bash
-numpy==1.25.2
-pandas==2.1.0
-scikit-learn==1.1.2
-tqdm==4.64.1
-torch==1.13.0+cu117
-torch-geometric==2.2.0
-xgboost==1.7.2
-```
-
-
-## Citation
-
-If you use this codebase, please cite our work:
-
-```bib
-@article{authorYearTitle,
-    title={title},
-    author={author},
-    year={year},
-    journal={journal},
-    url={url}
-}
-```
+Apache License 2.0

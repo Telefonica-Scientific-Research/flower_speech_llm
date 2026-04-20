@@ -132,3 +132,16 @@ dmypy.json
 .github/templates/*
 
 .idea/*
+
+# FL data & artifacts
+fl_*/
+mls_audio/
+FL_SLAM_checkpoints/
+wandb/
+*.ckpt
+*.flac
+*.wav
+*.log
+*.jsonl
+/tmp/
+ray_results/

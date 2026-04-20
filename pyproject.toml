@@ -1,0 +1,104 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "speech-llm-fl"
+version = "1.0.1"
+description = "Federated Learning with SpeechLLM (WavLM + TinyLlama), PyTorch Lightning, and Flower"
+license = "Apache-2.0"
+dependencies = [
+    "flwr[simulation]>=1.26.1",
+    "pytorch-lightning>=2.0.0",
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
+    "torchvision>=0.15.0",
+    "transformers>=4.40.0",
+    "datasets>=2.0.0",
+    "pandas>=1.5.0",
+    "jiwer>=3.0.0",
+    "wandb>=0.15.0",
+    "peft>=0.10.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.flwr.app]
+publisher = "mnabih"
+
+[tool.flwr.app.components]
+serverapp = "speech_llm_fl.server_app:app"
+clientapp = "speech_llm_fl.client_app:app"
+
+# ---- Federation Config ----
+[tool.flwr.app.config]
+num-server-rounds   = 40
+fraction-fit        = 0.3
+fraction-evaluate   = 0.0
+min-fit-clients     = 2
+min-evaluate-clients = 2
+
+# ---- Model Config ----
+audio-enc-dim        = 1024
+llm-dim              = 2048
+audio-encoder-name   = "microsoft/wavlm-large"
+connector-name       = "linear"
+llm-name             = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+finetune-encoder     = false
+connector-k          = 2
+use-lora             = true
+lora-r               = 8
+lora-alpha           = 16
+max-lr               = 0.0001
+total-training-step  = 10000000
+warmup-steps         = 100
+
+# ---- Training Config ----
+local-epochs          = 10
+train-batch-size      = 4
+train-batch-per-epoch = 200
+grad-accumulate-steps = 4
+num-workers           = 3
+
+# ---- LR Decay Config ----
+lr-decay-factor = 0.9
+lr-decay-every  = 10
+
+# ---- FedProx Config ----
+fedprox-mu = 0.0  # Set > 0 to enable FedProx (e.g. 0.01)
+
+# ---- Data Config ----
+csv-train-dir = "./fl_multilingual"
+csv-dev-dir   = "./fl_MLS_dev_speaker"
+csv-test-dir  = "./fl_MLS_test"
+
+# ---- Checkpoint Config ----
+checkpoint-dir    = "FL_SLAM_checkpoints"
+checkpoint-offset = 0
+pretrained-checkpoint = ""   # Set to path of .ckpt to resume from a checkpoint
+
+# ---- Simulation Config (flwr run --app . --run-config ...) ----
+
+#######################################################################
+# CONFIGURATION MIGRATION NOTICE:
+#
+# What was previously called "federation config" for SuperLink
+# connections in pyproject.toml has been renamed and moved.
+#
+# These settings are now **SuperLink connection configuration**
+# and are defined in the Flower configuration file.
+#
+# The entries below are commented out intentionally and are kept
+# only as a migration reference.
+#
+# Docs: https://flower.ai/docs/framework/ref-flower-configuration.html
+#######################################################################
+
+# [tool.flwr.federations]
+# default = "local-simulation"
+
+# [tool.flwr.federations.local-simulation]
+# options.num-supernodes = 316
+# options.backend.client-resources.num-cpus = 12
+# options.backend.client-resources.num-gpus = 1 ## 4 clients en each GPU
