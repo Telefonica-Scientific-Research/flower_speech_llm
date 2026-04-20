@@ -163,7 +163,7 @@ uv pip install \
 
 ```bash
 python -c "import flwr; print('Flower:', flwr.__version__)"
-python -c "from speech_llm_fl import client_app; print('OK')"
+python -c "from flower_speech_llm import client_app; print('OK')"
 ```
 
 ---
@@ -173,7 +173,7 @@ python -c "from speech_llm_fl import client_app; print('OK')"
 ### Download MLS Dataset
 
 ```bash
-python Fed-SpeechLLM/prepare_mls_fl.py --languages all --output-dir ./mls_audio
+python flower_speech_llm/prepare_mls_fl.py --languages all --output-dir ./mls_audio
 ```
 
 This downloads Multilingual LibriSpeech (8 languages: English, German, Dutch, French, Spanish, Italian, Portuguese, Polish) and creates per-speaker CSV files.
@@ -181,7 +181,7 @@ This downloads Multilingual LibriSpeech (8 languages: English, German, Dutch, Fr
 ### Create FL Partitions
 
 ```bash
-python Fed-SpeechLLM/create_experiment_partitions.py --base-dir ./Fed-SpeechLLM
+python flower_speech_llm/create_experiment_partitions.py --base-dir ./flower_speech_llm
 ```
 
 This generates three experiment settings:
@@ -213,20 +213,20 @@ Each client CSV has the following columns:
 ### Quick Start
 
 ```bash
-flwr run . --run-config 'csv-train-dir="./Fed-SpeechLLM/fl_A1_mixed_316" csv-dev-dir="./Fed-SpeechLLM/fl_dev_316"'
+flwr run . --run-config 'csv-train-dir="./flower_speech_llm/fl_A1_mixed_316" csv-dev-dir="./flower_speech_llm/fl_dev_316"'
 ```
 
 ### Experiment Settings
 
 ```bash
 # A1: Mixed-multilingual + FedAvg
-flwr run . --run-config 'csv-train-dir="./Fed-SpeechLLM/fl_A1_mixed_316" csv-dev-dir="./Fed-SpeechLLM/fl_dev_316"'
+flwr run . --run-config 'csv-train-dir="./flower_speech_llm/fl_A1_mixed_316" csv-dev-dir="./flower_speech_llm/fl_dev_316"'
 
 # B1: One-speaker + FedAvg
-flwr run . --run-config 'csv-train-dir="./Fed-SpeechLLM/fl_B1_speaker_316" csv-dev-dir="./Fed-SpeechLLM/fl_dev_316"'
+flwr run . --run-config 'csv-train-dir="./flower_speech_llm/fl_B1_speaker_316" csv-dev-dir="./flower_speech_llm/fl_dev_316"'
 
 # B2: One-speaker + FedProx (mu=0.01)
-flwr run . --run-config 'csv-train-dir="./Fed-SpeechLLM/fl_B1_speaker_316" csv-dev-dir="./Fed-SpeechLLM/fl_dev_316" fedprox-mu=0.01'
+flwr run . --run-config 'csv-train-dir="./flower_speech_llm/fl_B1_speaker_316" csv-dev-dir="./flower_speech_llm/fl_dev_316" fedprox-mu=0.01'
 ```
 
 ### Override Settings at Runtime
@@ -244,7 +244,7 @@ flwr run . --run-config 'pretrained-checkpoint="FL_SLAM_checkpoints/Checkpoint-r
 ### Restrict to Specific GPUs
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 flwr run . --run-config 'csv-train-dir="./Fed-SpeechLLM/fl_A1_mixed_316" csv-dev-dir="./Fed-SpeechLLM/fl_dev_316"'
+CUDA_VISIBLE_DEVICES=0 flwr run . --run-config 'csv-train-dir="./flower_speech_llm/fl_A1_mixed_316" csv-dev-dir="./flower_speech_llm/fl_dev_316"'
 ```
 
 ### Monitor a Run
@@ -258,9 +258,9 @@ flwr stop <run_id>                # Stop a run
 ### Evaluate a Checkpoint
 
 ```bash
-python Fed-SpeechLLM/evaluate_fl_model.py \
+python flower_speech_llm/evaluate_fl_model.py \
   --checkpoint FL_SLAM_checkpoints/final_model.pt \
-  --test-dir Fed-SpeechLLM/fl_MLS_test
+  --test-dir flower_speech_llm/fl_MLS_test
 ```
 
 ---
@@ -317,8 +317,8 @@ lr-decay-every  = 10
 ## Project Structure
 
 ```
-speech-llm-fl/
-├── Fed-SpeechLLM/
+flower_speech_llm/
+├── flower_speech_llm/
 │   ├── __init__.py
 │   ├── client_app.py                   # Flower ClientApp (train + evaluate)
 │   ├── server_app.py                   # Flower ServerApp (SpeechLLMFedAvg)
