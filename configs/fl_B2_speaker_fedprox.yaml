@@ -1,0 +1,62 @@
+# ==============================================================================
+# FL Experiment B2: One-speaker non-IID + FedProx
+#
+# Same data partitioning as B1 (one speaker per client), but uses FedProx
+# with mu=0.01 to mitigate non-IID divergence.
+# ==============================================================================
+
+# ---- Model ----
+model-type:          speech-llm
+audio-enc-dim:       1024
+llm-dim:             2048
+audio-encoder-name:  microsoft/wavlm-large
+connector-name:      linear
+llm-name:            TinyLlama/TinyLlama-1.1B-Chat-v1.0
+finetune-encoder:    false
+connector-k:         2
+
+# ---- LoRA ----
+use-lora:            true
+lora-r:              8
+lora-alpha:          16
+
+# ---- Federation ----
+num-server-rounds:   40
+fraction-fit:        0.3
+fraction-evaluate:   0.0
+min-fit-clients:     2
+min-evaluate-clients: 2
+
+# ---- Client Training ----
+local-epochs:          10
+train-batch-size:      4
+train-batch-per-epoch: 200
+grad-accumulate-steps: 4
+num-workers:           3
+
+# ---- Optimizer ----
+max-lr:              0.0001
+total-training-step: 10000000
+warmup-steps:        100
+
+# ---- LR Decay ----
+lr-decay-factor:     0.9
+lr-decay-every:      10
+
+# ---- FedProx ----
+fedprox-mu:          0.01   # FedProx enabled
+
+# ---- Data ----
+csv-train-dir:  flower_speech_llm/fl_B1_speaker_316
+csv-dev-dir:    flower_speech_llm/fl_MLS_dev_speaker
+csv-test-dir:   flower_speech_llm/fl_MLS_test
+
+# ---- Checkpoints ----
+checkpoint-dir:        FL_checkpoints_B2_speaker_fedprox
+checkpoint-offset:     0
+pretrained-checkpoint: ""
+
+# ---- Simulation ----
+num-supernodes:        316
+client-num-cpus:       4
+client-num-gpus:       1.0

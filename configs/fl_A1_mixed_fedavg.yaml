@@ -1,0 +1,71 @@
+# ==============================================================================
+# FL Experiment A1: Multilingual-mixed IID + FedAvg
+#
+# Pools all 8 MLS languages into IID partitions across 316 clients.
+# Uses FedAvg (fedprox-mu = 0) with cosine LR decay.
+#
+# Usage:
+#   flwr run . --run-config "$(python -c "
+#     import yaml
+#     cfg = yaml.safe_load(open('configs/fl_A1_mixed_fedavg.yaml'))
+#     print(' '.join(f'{k}={v}' for k,v in cfg.items() if not k.startswith('_')))
+#   ")"
+#
+#   Or simply reference values from this file in run_experiments.sh.
+# ==============================================================================
+
+# ---- Model ----
+model-type:          speech-llm
+audio-enc-dim:       1024
+llm-dim:             2048
+audio-encoder-name:  microsoft/wavlm-large
+connector-name:      linear
+llm-name:            TinyLlama/TinyLlama-1.1B-Chat-v1.0
+finetune-encoder:    false
+connector-k:         2
+
+# ---- LoRA ----
+use-lora:            true
+lora-r:              8
+lora-alpha:          16
+
+# ---- Federation ----
+num-server-rounds:   40
+fraction-fit:        0.3
+fraction-evaluate:   0.0
+min-fit-clients:     2
+min-evaluate-clients: 2
+
+# ---- Client Training ----
+local-epochs:          10
+train-batch-size:      4
+train-batch-per-epoch: 200
+grad-accumulate-steps: 4
+num-workers:           3
+
+# ---- Optimizer ----
+max-lr:              0.0001
+total-training-step: 10000000
+warmup-steps:        100
+
+# ---- LR Decay ----
+lr-decay-factor:     0.9
+lr-decay-every:      10
+
+# ---- FedProx ----
+fedprox-mu:          0.0   # FedAvg (no proximal term)
+
+# ---- Data ----
+csv-train-dir:  flower_speech_llm/fl_A1_mixed_316
+csv-dev-dir:    flower_speech_llm/fl_MLS_dev_speaker
+csv-test-dir:   flower_speech_llm/fl_MLS_test
+
+# ---- Checkpoints ----
+checkpoint-dir:        FL_checkpoints_A1_mixed
+checkpoint-offset:     0
+pretrained-checkpoint: ""
+
+# ---- Simulation ----
+num-supernodes:        316
+client-num-cpus:       4
+client-num-gpus:       1.0
