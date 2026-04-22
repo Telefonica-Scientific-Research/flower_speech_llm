@@ -197,6 +197,10 @@ python -m flower_speech_llm.create_experiment_partitions --base-dir ./flower_spe
 | **B1** (Non-IID) | One speaker per client | 316 |
 | **B2** (Non-IID + FedProx) | Same as B1, with FedProx enabled | 316 |
 
+**A1** pools all ~1.73M samples from ~2,900 speakers (8 languages) into a single set, then uses Flower's `IidPartitioner` to randomly assign them to 316 clients with uniform probability (~5,460 samples/client, all languages mixed per client).
+
+**B1** selects 316 speakers via stratified sampling (proportional to each language's speaker count), then assigns each speaker's full recording set to one client using `NaturalIdPartitioner`. Each client therefore contains a single language, and sample counts vary widely across clients. **B2** uses the same partition as B1 but enables the FedProx regularisation term (`fedprox-mu > 0`) at runtime.
+
 ### CSV Format
 
 **Speech-LLM** requires: `audio_path`, `transcript`, `gender`, `emotion`, `age`, `accent`, `isspeech`
