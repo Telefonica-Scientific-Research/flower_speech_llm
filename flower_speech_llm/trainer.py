@@ -91,28 +91,54 @@ class SpeechLLMLightning(pl.LightningModule):
         optimizer = Adam(opt, lr=self.max_lr)
         return optimizer
 
-    def encode(self, mel, pre_tokenized_ids, post_tokenized_ids, output_tokenized_ids, return_embedding_loss=False):
+    def encode(self, mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask,
+               out_ids, out_mask, return_embedding_loss=False):
+        """Build combined embeddings, attention mask, and labels for the LLM.
+
+        Supports batch_size >= 1 with proper padding masks.  The combined
+        sequence is: [pre_prompt | speech_embeds | post_prompt | output].
+        Padding positions in any segment are masked in the attention mask and
+        get label_id = -100 so they don't contribute to the loss.
+        """
         batch_size = mel.shape[0]
 
-        speech_embeds = self.audio_encoder(mel)
+        # ---- Audio encoder (with padding mask) ----
+        speech_embeds = self.audio_encoder(mel, attention_mask=mel_mask)
         speech_embeds = self.connector(speech_embeds)
-        
+        # Compute valid speech-embed lengths from audio input lengths
+        input_lengths = mel_mask.sum(dim=1)  # (B,)
+        enc_output_lengths = self.audio_encoder.model._get_feat_extract_output_lengths(input_lengths)
+        # Build speech attention mask: 1 for valid encoder frames, 0 for padding
+        speech_seq_len = speech_embeds.shape[1]
+        speech_mask = (torch.arange(speech_seq_len, device=mel.device)[None, :]
+                       < enc_output_lengths[:, None]).long()
+
+        # ---- Text embeddings ----
         embedder = self.llm_model.get_input_embeddings()
-        #embedder = self.llm_model.model.embed_tokens
-        #embedder = self.llm_model.model.model.embed_tokens
-        pre_prompt_embeds = embedder(pre_tokenized_ids)
-        post_prompt_embeds = embedder(post_tokenized_ids)
-        output_prompt_embeds = embedder(output_tokenized_ids)
+        pre_prompt_embeds = embedder(pre_ids)
+        post_prompt_embeds = embedder(post_ids)
+        output_prompt_embeds = embedder(out_ids)
 
-        combined_embeds = torch.cat([pre_prompt_embeds, speech_embeds, post_prompt_embeds, output_prompt_embeds], dim=1)
-        atts = torch.ones(combined_embeds.size()[:-1], dtype=torch.long).to(combined_embeds.device)
+        # ---- Concatenate along sequence dimension ----
+        combined_embeds = torch.cat(
+            [pre_prompt_embeds, speech_embeds, post_prompt_embeds, output_prompt_embeds], dim=1)
 
-        input_token_length = pre_tokenized_ids.shape[1] + speech_embeds.shape[1] + post_tokenized_ids.shape[1]
-        label_ids = torch.cat([
-            torch.ones([batch_size, input_token_length], device=combined_embeds.device)*-100,
-            output_tokenized_ids
-        ], 1).to(combined_embeds.device).to(torch.int64)
-        return combined_embeds, atts, label_ids
+        # ---- Combined attention mask ----
+        combined_atts = torch.cat(
+            [pre_mask, speech_mask, post_mask, out_mask], dim=1
+        ).to(combined_embeds.device)
+
+        # ---- Labels: -100 for input/speech/post positions AND padding ----
+        input_token_length = pre_ids.shape[1] + speech_embeds.shape[1] + post_ids.shape[1]
+        input_labels = torch.full(
+            [batch_size, input_token_length], -100,
+            device=combined_embeds.device, dtype=torch.int64)
+        output_labels = out_ids.clone().to(combined_embeds.device).to(torch.int64)
+        # Mask out padding positions in output
+        output_labels[out_mask == 0] = -100
+        label_ids = torch.cat([input_labels, output_labels], dim=1)
+
+        return combined_embeds, combined_atts, label_ids
 
     def forward(self, embeds, atts, label_ids):
         out = self.llm_model(
@@ -123,8 +149,9 @@ class SpeechLLMLightning(pl.LightningModule):
         return out
     
     def training_step(self, batch, batch_idx):
-        mel, pre_tokenized_ids, post_tokenized_ids, output_tokenized_ids = batch
-        embeds, atts, label_ids = self.encode(mel, pre_tokenized_ids, post_tokenized_ids, output_tokenized_ids)
+        mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask = batch
+        embeds, atts, label_ids = self.encode(
+            mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask)
         outputs = self.forward(embeds, atts, label_ids)
         loss =  outputs["loss"]
         self.log("train/loss", loss, on_epoch=False)
@@ -159,8 +186,9 @@ class SpeechLLMLightning(pl.LightningModule):
         return fields
 
     def validation_step(self, batch, batch_idx):
-            mel, pre_tokenized_ids, post_tokenized_ids, output_tokenized_ids = batch
-            embeds, atts, label_ids = self.encode(mel, pre_tokenized_ids, post_tokenized_ids, output_tokenized_ids)
+            mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask = batch
+            embeds, atts, label_ids = self.encode(
+                mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask)
             outputs = self.forward(embeds, atts, label_ids)
             loss = outputs["loss"]
             self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
@@ -170,7 +198,7 @@ class SpeechLLMLightning(pl.LightningModule):
 
             # Decode only output-portion predictions to avoid input-position noise
             generated_output_text = self._decode_output_only(predicted_ids, label_ids)
-            target_text = self.llm_tokenizer.decode(output_tokenized_ids[0], skip_special_tokens=True)
+            target_text = self.llm_tokenizer.decode(out_ids[0], skip_special_tokens=True)
             
             # Robust field extraction (tolerates malformed JSON from teacher forcing)
             extracted_pred = self._extract_all_fields_robust(generated_output_text)
@@ -231,8 +259,9 @@ class SpeechLLMLightning(pl.LightningModule):
             return {"val_loss": loss}
     
     def test_step(self, batch, batch_idx):
-            mel, pre_tokenized_ids, post_tokenized_ids, output_tokenized_ids = batch
-            embeds, atts, label_ids = self.encode(mel, pre_tokenized_ids, post_tokenized_ids, output_tokenized_ids)
+            mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask = batch
+            embeds, atts, label_ids = self.encode(
+                mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask)
             outputs = self.forward(embeds, atts, label_ids)
             loss = outputs["loss"]
             self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
@@ -242,7 +271,7 @@ class SpeechLLMLightning(pl.LightningModule):
 
             # Decode only output-portion predictions to avoid input-position noise
             generated_output_text = self._decode_output_only(predicted_ids, label_ids)
-            target_text = self.llm_tokenizer.decode(output_tokenized_ids[0], skip_special_tokens=True)
+            target_text = self.llm_tokenizer.decode(out_ids[0], skip_special_tokens=True)
             
             # Robust field extraction (tolerates malformed JSON from teacher forcing)
             extracted_pred = self._extract_all_fields_robust(generated_output_text)

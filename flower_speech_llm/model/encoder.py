@@ -15,14 +15,15 @@ class TransformerAudioEncoder(nn.Module):
             for param in self.model.parameters():
                 param.requires_grad = False
 
-    def forward(self, x):
+    def forward(self, x, attention_mask=None):
         """
         Args:
             x: Input features from the feature extractor, shape (B, seq_len) or (B, 1, seq_len).
+            attention_mask: Optional (B, seq_len), 1 for real frames, 0 for padding.
         Returns:
             Hidden states from the last layer, shape (B, T, D).
         """
-        outputs = self.model(x)
+        outputs = self.model(x, attention_mask=attention_mask)
         # Use last_hidden_state if available, otherwise hidden_states
         if hasattr(outputs, "last_hidden_state"):
             return outputs.last_hidden_state

@@ -29,8 +29,8 @@ warmup-steps:        100
 
 # ---- Training (minimal) ----
 max-epochs:            1
-train-batch-size:      1         # must be 1 (collator limitation)
-grad-accumulate-steps: 4
+train-batch-size:      4
+grad-accumulate-steps: 2
 gradient-clip-val:     1.0
 limit-train-batches:   50
 limit-val-batches:     20

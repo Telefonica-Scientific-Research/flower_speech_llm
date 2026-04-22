@@ -101,16 +101,20 @@ def evaluate_speech_llm_on_csv(model, csv_path, device="cuda", max_samples=None)
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(loader):
-            mel, pre_tokenized_ids, post_tokenized_ids, output_tokenized_ids = batch
+            mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask = batch
 
             if mel is not None:
                 mel = mel.to(device)
-            pre_tokenized_ids = pre_tokenized_ids.to(device)
-            post_tokenized_ids = post_tokenized_ids.to(device)
-            output_tokenized_ids = output_tokenized_ids.to(device)
+                mel_mask = mel_mask.to(device)
+            pre_ids = pre_ids.to(device)
+            pre_mask = pre_mask.to(device)
+            post_ids = post_ids.to(device)
+            post_mask = post_mask.to(device)
+            out_ids = out_ids.to(device)
+            out_mask = out_mask.to(device)
 
             embeds, atts, label_ids = model.encode(
-                mel, pre_tokenized_ids, post_tokenized_ids, output_tokenized_ids
+                mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask
             )
             outputs = model(embeds, atts, label_ids)
 
@@ -125,7 +129,7 @@ def evaluate_speech_llm_on_csv(model, csv_path, device="cuda", max_samples=None)
             generated_text = model.llm_tokenizer.decode(output_pred_ids, skip_special_tokens=True)
 
             target_text = model.llm_tokenizer.decode(
-                output_tokenized_ids[0].cpu(), skip_special_tokens=True
+                out_ids[0].cpu(), skip_special_tokens=True
             )
 
             # Robust field extraction — tolerates slightly malformed JSON

@@ -32,16 +32,13 @@ total-training-step: 10000000
 warmup-steps:        100
 
 # ---- Training ----
-# NOTE: batch_size must be 1 — the collator processes one sample at a time
-# because audio lengths vary and the encoder concatenates embeddings along the
-# sequence dimension.  Use grad-accumulate-steps for effective batch size.
 max-epochs:            20        # ~18 epochs ≈ 40 FL rounds equivalent
-train-batch-size:      1         # must be 1 (collator limitation)
-grad-accumulate-steps: 16        # effective batch = 16
+train-batch-size:      16        # true batching with padded audio
+grad-accumulate-steps: 1         # effective batch = 16
 gradient-clip-val:     1.0
 limit-train-batches:   null      # null = full dataset
 limit-val-batches:     200
-num-workers:           8          # parallelizes audio I/O + feature extraction
+num-workers:           8
 val-check-interval:    0.25
 
 # ---- Data ----

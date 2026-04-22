@@ -27,26 +27,74 @@ class MyCollator:
         ).input_values
 
     def __call__(self, batch):
-        # NOTE: The encoder concatenates [pre_prompt, speech_embeds, post_prompt,
-        # output] along the sequence dimension.  Because audio lengths vary per
-        # sample, true batching (batch_size>1) would require complex padding /
-        # packing.  The original code processes a single sample per collate call;
-        # we preserve that contract here.  Use grad_accumulate_steps for effective
-        # batch size, and DataLoader workers + prefetch for throughput.
-        waveform, pre_speech_prompt, post_speech_prompt, output_prompt, complete_prompt = batch[0]
-        mel = self._extract_features(waveform)
+        """Collate a batch of samples with proper padding for batch_size >= 1.
 
-        pre_tokenized_ids = \
-            self.tokenizer(pre_speech_prompt, padding="do_not_pad", return_tensors='pt', truncation=False,
-                           add_special_tokens=False)["input_ids"]
-        post_tokenized_ids = \
-            self.tokenizer(post_speech_prompt, padding="do_not_pad", return_tensors='pt', truncation=False,
-                           add_special_tokens=False)["input_ids"]
-        output_tokenized_ids = \
-            self.tokenizer(self.tokenizer.bos_token + output_prompt + self.tokenizer.eos_token, padding="do_not_pad",
-                           return_tensors='pt', truncation=False, add_special_tokens=False)["input_ids"]
+        Returns a tuple of 8 tensors:
+            mel:      (B, max_audio_len) — padded audio features
+            mel_mask: (B, max_audio_len) — 1 for real frames, 0 for padding
+            pre_ids:  (B, max_pre_len)   — padded pre-prompt token ids
+            pre_mask: (B, max_pre_len)   — attention mask
+            post_ids: (B, max_post_len)  — padded post-prompt token ids
+            post_mask:(B, max_post_len)  — attention mask
+            out_ids:  (B, max_out_len)   — padded output token ids
+            out_mask: (B, max_out_len)   — attention mask
+        """
+        waveforms, pre_prompts, post_prompts, output_prompts = [], [], [], []
+        for sample in batch:
+            waveform, pre, post, output, _complete = sample
+            waveforms.append(waveform.squeeze().numpy() if waveform is not None else None)
+            pre_prompts.append(pre)
+            post_prompts.append(post)
+            output_prompts.append(output)
 
-        return mel, pre_tokenized_ids, post_tokenized_ids, output_tokenized_ids
+        # ---- Audio features (padded) ----
+        if waveforms[0] is not None:
+            if "openai/whisper" in self.audio_encoder_name:
+                # Whisper: mel spectrogram (fixed length per chunk)
+                import whisper
+                mels = [self.wav_2_mel(torch.from_numpy(w).unsqueeze(0)) for w in waveforms]
+                mel = torch.stack(mels, dim=0)
+                mel_mask = torch.ones(mel.shape[:2], dtype=torch.long)
+            else:
+                # WavLM / HuBERT: AutoFeatureExtractor handles padding
+                features = self.hubert_processor(
+                    waveforms,
+                    return_tensors="pt",
+                    sampling_rate=16000,
+                    padding=True,
+                    return_attention_mask=True,
+                )
+                mel = features.input_values        # (B, max_audio_len)
+                mel_mask = features.attention_mask  # (B, max_audio_len)
+        else:
+            mel, mel_mask = None, None
+
+        # ---- Text tokens (padded) ----
+        pad_token_id = self.tokenizer.pad_token_id
+        if pad_token_id is None:
+            pad_token_id = self.tokenizer.eos_token_id
+
+        pre_enc = self.tokenizer(
+            pre_prompts, padding=True, return_tensors='pt',
+            truncation=False, add_special_tokens=False,
+        )
+        post_enc = self.tokenizer(
+            post_prompts, padding=True, return_tensors='pt',
+            truncation=False, add_special_tokens=False,
+        )
+        output_texts = [
+            self.tokenizer.bos_token + o + self.tokenizer.eos_token
+            for o in output_prompts
+        ]
+        out_enc = self.tokenizer(
+            output_texts, padding=True, return_tensors='pt',
+            truncation=False, add_special_tokens=False,
+        )
+
+        return (mel, mel_mask,
+                pre_enc.input_ids, pre_enc.attention_mask,
+                post_enc.input_ids, post_enc.attention_mask,
+                out_enc.input_ids, out_enc.attention_mask)
 
     def wav_2_mel(self, wav_tensor):
         mel = whisper.log_mel_spectrogram(wav_tensor[0])

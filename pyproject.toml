@@ -70,13 +70,10 @@ data-language        = "en"
 # lora-r, lora-alpha, use-lora, finetune-encoder are shared with speech-llm config above
 
 # ---- Training Config ----
-# NOTE: train-batch-size must be 1 for speech-llm (collator processes one
-# sample at a time because audio lengths vary).  Use grad-accumulate-steps
-# for effective batch size.  Voxtral supports batch_size > 1.
 local-epochs          = 10
-train-batch-size      = 1
+train-batch-size      = 8
 train-batch-per-epoch = 200
-grad-accumulate-steps = 16
+grad-accumulate-steps = 2
 num-workers           = 3
 
 # ---- LR Decay Config ----
