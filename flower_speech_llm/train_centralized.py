@@ -29,6 +29,7 @@ import argparse
 import os
 import sys
 
+import yaml
 import torch
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
@@ -37,6 +38,31 @@ from torch.utils.data import ConcatDataset, DataLoader
 
 from .trainer import SpeechLLMLightning, save_trainable_state_dict, load_trainable_state_dict
 from .dataset import InstructionalAudioDataset, MyCollator
+
+
+class AdapterCheckpoint(pl.Callback):
+    """Save adapter-only .pt files after each validation run.
+
+    These lightweight checkpoints (~12 MB) can be directly loaded by
+    ``evaluate_fl_model.py`` without extracting state_dict from PL
+    checkpoint format.
+    """
+
+    def __init__(self, output_dir):
+        self.output_dir = output_dir
+
+    def on_validation_end(self, trainer, pl_module):
+        if trainer.sanity_checking:
+            return
+        epoch = trainer.current_epoch
+        step = trainer.global_step
+        wer = trainer.callback_metrics.get("val/wer")
+        tag = f"epoch{epoch:02d}-step{step}"
+        if wer is not None:
+            tag += f"-wer{wer:.4f}"
+        path = os.path.join(self.output_dir, f"adapter-{tag}.pt")
+        save_trainable_state_dict(pl_module, path)
+        print(f"  💾 Adapter checkpoint saved: {path}")
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +87,10 @@ def parse_args():
     p = argparse.ArgumentParser(
         description="Centralized training of SpeechLLM (WavLM + TinyLlama)"
     )
+
+    # ---- Config file ----
+    p.add_argument("--config", default="",
+                   help="Path to a YAML config file. CLI args override config values.")
 
     # ---- Model config (matches pyproject.toml) ----
     p.add_argument("--audio-enc-dim", type=int, default=1024)
@@ -125,6 +155,21 @@ def parse_args():
                    help="W&B project name (empty = no wandb)")
     p.add_argument("--run-name", default="centralized-speech-llm",
                    help="W&B run name / checkpoint prefix")
+
+    # ---- Two-pass parse: load YAML defaults, then let CLI override ----
+    # First pass: just get --config
+    preliminary, _ = p.parse_known_args()
+    if preliminary.config and os.path.exists(preliminary.config):
+        with open(preliminary.config) as f:
+            yaml_cfg = yaml.safe_load(f) or {}
+        # Map YAML keys (kebab-case) → argparse dest (underscore)
+        defaults = {k.replace("-", "_"): v for k, v in yaml_cfg.items()}
+        # Handle YAML null → Python None
+        for k, v in defaults.items():
+            if v is None:
+                defaults[k] = None
+        p.set_defaults(**defaults)
+        print(f"Loaded config from: {preliminary.config}")
 
     return p.parse_args()
 
@@ -233,6 +278,7 @@ def main():
             save_last=True,
             auto_insert_metric_name=False,
         ),
+        AdapterCheckpoint(output_dir=args.output_dir),
         LearningRateMonitor(logging_interval="step"),
     ]
 
