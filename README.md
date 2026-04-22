@@ -42,6 +42,7 @@ Audio (waveform) → Voxtral Audio-Encoder (frozen) → Multi-Modal Projector (t
 ## Key Features
 
 - **Two model backends** — Switch between `speech-llm` and `voxtral` via a single config key
+- **Batched data pipeline** — `MyCollator` pads variable-length audio and text to support true `batch_size > 1` with proper attention masks, fixing a bug in the original code that silently discarded all but the first sample per batch
 - **Privacy-preserving** — Only LoRA + connector weights are shared; raw audio never leaves the client
 - **Adapter-only checkpoints** — Saves only trainable parameters (LoRA + connector/projector), reducing checkpoint size from ~5.4 GB to ~12 MB (439× smaller). Backward-compatible with legacy full state_dict checkpoints
 - **FedAvg + FedProx** — Custom `SpeechLLMFedAvg` strategy with per-round LR decay, configurable client sampling, and automatic checkpointing
@@ -50,6 +51,7 @@ Audio (waveform) → Voxtral Audio-Encoder (frozen) → Multi-Modal Projector (t
 - **Checkpoint resumption** — Resume from any `.ckpt` or `.pt` via config
 - **Multi-GPU simulation** — Ray backend with configurable client-to-GPU mapping and Tensor Core optimization
 - **Multilingual data pipeline** — Scripts to download MLS (8 languages), create IID or speaker-based FL partitions
+- **YAML configuration** — Standalone config files in `configs/` for all experiments (FL A1/B1/B2, Voxtral, centralized). The centralized script accepts `--config <yaml>` with CLI override support
 - **HPC deployment** — Singularity/Docker images with pre-downloaded models for offline compute nodes
 
 ---
@@ -89,6 +91,13 @@ The original app did **not** include the `model/` subpackage. This repo provides
 | `client_app.py` | Model routing via `model-type` config key |
 | `server_app.py` | Server-side model routing and weight initialization |
 
+### Bug Fixes
+
+| Fix | Details |
+|-----|--------|
+| **Collator batch_size > 1** | Original `MyCollator.__call__` used `batch[0]`, discarding all samples except the first. With `batch_size=4`, 75% of loaded audio was silently thrown away. Fixed with padded batching via `AutoFeatureExtractor(padding=True)` and per-sample attention masks throughout the pipeline |
+| **Evaluation decoding** | Teacher-forced argmax decoded the full sequence (input+speech+output positions), producing garbage text. Fixed to decode only output positions where `label_ids != -100` |
+
 ### New Features
 
 | Feature | Details |
@@ -97,6 +106,8 @@ The original app did **not** include the `model/` subpackage. This repo provides
 | **W&B integration** | Per-client logging grouped by experiment |
 | **Tensor Core optimization** | `float32_matmul_precision("medium")` for Ampere+ GPUs |
 | **HPC containers** | Singularity `.def` + Dockerfile + SLURM script in `deploy/` |
+| **YAML configs** | Standalone experiment configs in `configs/` for FL (A1/B1/B2/Voxtral) and centralized training |
+| **Adapter checkpoint callback** | `AdapterCheckpoint` saves lightweight adapter-only `.pt` files at every validation step during centralized training |
 
 ### New Scripts
 
@@ -118,9 +129,9 @@ The original app did **not** include the `model/` subpackage. This repo provides
 | `server_app.py` | Flower `ServerApp` — `SpeechLLMFedAvg` strategy with LR decay and checkpointing |
 | `trainer.py` | `SpeechLLMLightning` — WavLM + connector + TinyLlama pipeline; `save_trainable_state_dict()` / `load_trainable_state_dict()` helpers |
 | `trainer_voxtral.py` | `VoxtralLightning` — end-to-end Voxtral wrapper |
-| `dataset.py` | CSV-based audio dataset for speech-llm (multi-task JSON output) |
+| `dataset.py` | CSV-based audio dataset for speech-llm (multi-task JSON output); `MyCollator` with padded batching |
 | `dataset_voxtral.py` | CSV-based audio dataset for Voxtral (language-tagged transcription) |
-| `model/` | Encoder, connector, LLM, and Voxtral model loaders |
+| `model/` | Encoder (with attention_mask support), connector, LLM, and Voxtral model loaders |
 | `train_centralized.py` | Centralized training baseline (pools all client data) |
 | `evaluate_fl_model.py` | Checkpoint evaluation (both model types) |
 
@@ -223,6 +234,12 @@ Train the same model architecture without federation for comparison. All client 
 # Default — FL-comparable training budget (20 epochs ≈ 40 FL rounds):
 python -m flower_speech_llm.train_centralized
 
+# Using a YAML config file (CLI args override config values):
+python -m flower_speech_llm.train_centralized --config configs/centralized.yaml
+
+# Quick smoke test:
+python -m flower_speech_llm.train_centralized --config configs/centralized_quick_test.yaml
+
 # Multi-GPU with wandb:
 python -m flower_speech_llm.train_centralized --devices 0,1,2,3 --strategy ddp \
     --wandb-project speech-llm-centralized
@@ -240,7 +257,7 @@ python -m flower_speech_llm.train_centralized \
     --csv-dev-dir /path/to/fl_MLS_dev_speaker
 ```
 
-The centralized script uses identical model config, optimizer, gradient clipping, and LoRA settings as the FL experiments. Default 20 epochs over ~1.7M pooled samples ≈ 34M sample exposures, comparable to 40 FL rounds × 95 clients × 2000 batches × batch_size 4 ≈ 30M.
+The centralized script uses identical model config, optimizer, gradient clipping, and LoRA settings as the FL experiments. Default 20 epochs over ~1.7M pooled samples ≈ 34M sample exposures, comparable to 40 FL rounds × 95 clients × 2000 batches × batch_size 8 ≈ 60M.
 
 Run `python -m flower_speech_llm.train_centralized --help` for all options.
 
@@ -329,9 +346,9 @@ min-fit-clients    = 2
 
 ```toml
 local-epochs          = 10
-train-batch-size      = 4
+train-batch-size      = 8          # true batching with padded audio
 train-batch-per-epoch = 200
-grad-accumulate-steps = 4
+grad-accumulate-steps = 2          # effective batch = 16
 max-lr                = 0.0001
 ```
 
@@ -381,7 +398,7 @@ flower_speech_llm/
 │   ├── server_app.py                   # Flower ServerApp (SpeechLLMFedAvg)
 │   ├── trainer.py                      # SpeechLLMLightning (WavLM + TinyLlama)
 │   ├── trainer_voxtral.py              # VoxtralLightning (Voxtral end-to-end)
-│   ├── dataset.py                      # Dataset for speech-llm
+│   ├── dataset.py                      # Dataset + batched collator for speech-llm
 │   ├── dataset_voxtral.py              # Dataset for Voxtral
 │   ├── evaluate_fl_model.py            # Checkpoint evaluation (both models)
 │   ├── model/
@@ -393,6 +410,13 @@ flower_speech_llm/
 │   ├── prepare_mls_fl.py               # MLS dataset download + preparation
 │   ├── create_experiment_partitions.py  # FL partition generator
 │   └── run_experiments.sh              # Batch experiment runner
+├── configs/
+│   ├── fl_A1_mixed_fedavg.yaml         # FL: IID mixed + FedAvg
+│   ├── fl_B1_speaker_fedavg.yaml       # FL: Non-IID speaker + FedAvg
+│   ├── fl_B2_speaker_fedprox.yaml      # FL: Non-IID speaker + FedProx
+│   ├── fl_voxtral.yaml                 # FL: Voxtral end-to-end
+│   ├── centralized.yaml                # Centralized training (full)
+│   └── centralized_quick_test.yaml     # Centralized training (smoke test)
 ├── deploy/
 │   ├── flower_speech_llm.def           # Singularity definition
 │   ├── Dockerfile                      # Docker image
