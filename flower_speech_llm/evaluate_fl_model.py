@@ -52,11 +52,18 @@ from torch.utils.data import Dataset, DataLoader
 # ---------------------------------------------------------------------------
 
 def load_speech_llm(checkpoint_path, model_kwargs):
-    """Instantiate SpeechLLMLightning and load checkpoint weights."""
+    """Instantiate SpeechLLMLightning and load checkpoint weights.
+
+    Works with both adapter-only checkpoints (LoRA + connector, ~90 keys)
+    and legacy full state_dicts (~779 keys).  Frozen base weights are
+    always loaded from pretrained HuggingFace models.
+    """
     model = SpeechLLMLightning(**model_kwargs)
     state_dict = torch.load(checkpoint_path, map_location="cpu")
     model.load_state_dict(state_dict, strict=False)
-    print(f"Loaded speech-llm checkpoint: {checkpoint_path}")
+    n_loaded = sum(1 for k in state_dict if k in dict(model.named_parameters()))
+    print(f"Loaded speech-llm checkpoint: {checkpoint_path} ({len(state_dict)} keys, "
+          f"{n_loaded} matched)")
     return model
 
 

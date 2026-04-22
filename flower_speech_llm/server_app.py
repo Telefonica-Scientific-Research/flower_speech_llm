@@ -123,8 +123,13 @@ class SpeechLLMFedAvg(FedAvg):
 
         round_id = server_round + self.checkpoint_offset
         ckpt_path = os.path.join(self.checkpoint_dir, f"Checkpoint-round-{round_id}.ckpt")
-        torch.save(model.state_dict(), ckpt_path)
-        print(f"[Round {server_round}] ✅ Aggregated model saved at {ckpt_path}")
+        # Save only trainable params (LoRA + connector) — much smaller checkpoint
+        trainable_sd = OrderedDict(
+            {n: p.detach().cpu() for n, p in model.named_parameters() if p.requires_grad}
+        )
+        torch.save(trainable_sd, ckpt_path)
+        print(f"[Round {server_round}] ✅ Adapter checkpoint saved at {ckpt_path} "
+              f"({len(trainable_sd)} keys)")
 
         del model, state_dict
         gc.collect()
@@ -149,11 +154,11 @@ def main(grid: Grid, context: Context) -> None:
     # ---- Load global model ----
     global_model = load_model_from_config(cfg)
 
-    # Optionally load from pretrained checkpoint
+    # Optionally load from pretrained checkpoint (supports both adapter-only and full)
     if pretrained and os.path.exists(pretrained):
         print(f"Loading pretrained checkpoint from: {pretrained}")
         state_dict = torch.load(pretrained, map_location="cpu")
-        global_model.load_state_dict(state_dict)
+        global_model.load_state_dict(state_dict, strict=False)
         torch.cuda.empty_cache()
         print("✅ Pretrained checkpoint loaded.")
     else:
@@ -190,5 +195,9 @@ def main(grid: Grid, context: Context) -> None:
 
     os.makedirs(checkpoint_dir, exist_ok=True)
     final_path = os.path.join(checkpoint_dir, "final_model.pt")
-    torch.save(global_model.state_dict(), final_path)
-    print(f"\n✅ Final model saved at: {final_path}")
+    # Save only trainable params (LoRA + connector)
+    trainable_sd = OrderedDict(
+        {n: p.detach().cpu() for n, p in global_model.named_parameters() if p.requires_grad}
+    )
+    torch.save(trainable_sd, final_path)
+    print(f"\n✅ Final adapter saved at: {final_path} ({len(trainable_sd)} keys)")

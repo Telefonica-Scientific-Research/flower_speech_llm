@@ -43,6 +43,7 @@ Audio (waveform) → Voxtral Audio-Encoder (frozen) → Multi-Modal Projector (t
 
 - **Two model backends** — Switch between `speech-llm` and `voxtral` via a single config key
 - **Privacy-preserving** — Only LoRA + connector weights are shared; raw audio never leaves the client
+- **Adapter-only checkpoints** — Saves only trainable parameters (LoRA + connector/projector), reducing checkpoint size from ~5.4 GB to ~12 MB (439× smaller). Backward-compatible with legacy full state_dict checkpoints
 - **FedAvg + FedProx** — Custom `SpeechLLMFedAvg` strategy with per-round LR decay, configurable client sampling, and automatic checkpointing
 - **LoRA fine-tuning** — Parameter-efficient federation via PEFT, reducing communication cost
 - **W&B logging** — Per-client training metrics and validation predictions logged to Weights & Biases
@@ -104,6 +105,7 @@ The original app did **not** include the `model/` subpackage. This repo provides
 | `prepare_mls_fl.py` | Download MLS (8 languages), save audio as FLAC, create per-speaker CSVs |
 | `create_experiment_partitions.py` | Generate IID and speaker-based FL partitions using `flwr-datasets` |
 | `evaluate_fl_model.py` | Evaluate checkpoints on MLS test sets (supports both model types) |
+| `train_centralized.py` | Centralized (non-federated) training baseline for comparison |
 | `run_experiments.sh` | Run A1/B1/B2 experiments sequentially |
 
 ---
@@ -114,11 +116,12 @@ The original app did **not** include the `model/` subpackage. This repo provides
 |---|---|
 | `client_app.py` | Flower `ClientApp` — routes to speech-llm or voxtral, local training, returns updated parameters |
 | `server_app.py` | Flower `ServerApp` — `SpeechLLMFedAvg` strategy with LR decay and checkpointing |
-| `trainer.py` | `SpeechLLMLightning` — WavLM + connector + TinyLlama pipeline |
+| `trainer.py` | `SpeechLLMLightning` — WavLM + connector + TinyLlama pipeline; `save_trainable_state_dict()` / `load_trainable_state_dict()` helpers |
 | `trainer_voxtral.py` | `VoxtralLightning` — end-to-end Voxtral wrapper |
 | `dataset.py` | CSV-based audio dataset for speech-llm (multi-task JSON output) |
 | `dataset_voxtral.py` | CSV-based audio dataset for Voxtral (language-tagged transcription) |
 | `model/` | Encoder, connector, LLM, and Voxtral model loaders |
+| `train_centralized.py` | Centralized training baseline (pools all client data) |
 | `evaluate_fl_model.py` | Checkpoint evaluation (both model types) |
 
 ### Federated Learning Process
@@ -127,7 +130,7 @@ The original app did **not** include the `model/` subpackage. This repo provides
 2. **Round Config** — Server computes decayed LR via `configure_train()` and sends to sampled clients
 3. **Local Training** — Each client trains for `local-epochs` × `train-batch-per-epoch` steps (optionally with FedProx)
 4. **Aggregation** — Weighted FedAvg over client updates proportional to dataset sizes
-5. **Checkpointing** — Model saved after every round; final model saved as `final_model.pt`
+5. **Checkpointing** — Adapter-only checkpoint (LoRA + connector weights) saved after every round and as `final_model.pt`. Only the ~90 trainable parameters are persisted (~12 MB); frozen encoder and LLM base weights are loaded from HuggingFace at model init
 
 ---
 
@@ -212,6 +215,35 @@ flwr run . --run-config 'csv-train-dir="/path/to/fl_B1_speaker_316" csv-dev-dir=
 flwr run . --run-config 'model-type="voxtral" csv-train-dir="/path/to/fl_A1_mixed_316" csv-dev-dir="/path/to/fl_dev_316"'
 ```
 
+### Centralized Baseline (No Federation)
+
+Train the same model architecture without federation for comparison. All client data is pooled into a single centralized dataset.
+
+```bash
+# Default — FL-comparable training budget (20 epochs ≈ 40 FL rounds):
+python -m flower_speech_llm.train_centralized
+
+# Multi-GPU with wandb:
+python -m flower_speech_llm.train_centralized --devices 0,1,2,3 --strategy ddp \
+    --wandb-project speech-llm-centralized
+
+# Quick smoke test:
+python -m flower_speech_llm.train_centralized --max-epochs 1 --limit-train-batches 50
+
+# Resume from FL checkpoint:
+python -m flower_speech_llm.train_centralized \
+    --pretrained-checkpoint FL_SLAM_checkpoints/final_model.pt
+
+# Custom data directories:
+python -m flower_speech_llm.train_centralized \
+    --csv-train-dir /path/to/fl_A1_mixed_316 \
+    --csv-dev-dir /path/to/fl_MLS_dev_speaker
+```
+
+The centralized script uses identical model config, optimizer, gradient clipping, and LoRA settings as the FL experiments. Default 20 epochs over ~1.7M pooled samples ≈ 34M sample exposures, comparable to 40 FL rounds × 95 clients × 2000 batches × batch_size 4 ≈ 30M.
+
+Run `python -m flower_speech_llm.train_centralized --help` for all options.
+
 ### Override Settings
 
 ```bash
@@ -219,6 +251,8 @@ flwr run . --run-config 'num-server-rounds=10 local-epochs=5 lora-r=16 max-lr=0.
 ```
 
 ### Resume from Checkpoint
+
+Checkpoints contain only trainable weights (LoRA adapters + connector). Both adapter-only and legacy full state_dict checkpoints are supported.
 
 ```bash
 flwr run . --run-config 'pretrained-checkpoint="/path/to/Checkpoint-round-50.ckpt" checkpoint-offset=50'
@@ -234,7 +268,7 @@ flwr stop <run_id>                # Stop a run
 
 ### Evaluate
 
-Run evaluation as a module (required for relative imports):
+Run evaluation as a module (required for relative imports). Works with both adapter-only (~12 MB) and legacy full checkpoints (~5.4 GB) — the loader auto-detects the format.
 
 ```bash
 # Speech-LLM
@@ -355,6 +389,7 @@ flower_speech_llm/
 │   │   ├── connector.py                # Linear / LinearPool / CNN connectors
 │   │   ├── llm.py                      # LLM + LoRA loader
 │   │   └── voxtral.py                  # Voxtral model loader + LoRA
+│   ├── train_centralized.py             # Centralized training baseline
 │   ├── prepare_mls_fl.py               # MLS dataset download + preparation
 │   ├── create_experiment_partitions.py  # FL partition generator
 │   └── run_experiments.sh              # Batch experiment runner

@@ -12,9 +12,39 @@ import random
 import re
 import json
 
+from collections import OrderedDict
+
 from .model.encoder import get_audio_encoder, TransformerAudioEncoder
 from .model.connector import get_connector, LinearConnector, LinearPoolConnector, CNNConnector
 from .model.llm import get_llm
+
+
+def save_trainable_state_dict(model, path):
+    """Save only trainable parameters (LoRA adapters + connector).
+
+    This produces a checkpoint ~100x smaller than the full state_dict
+    since frozen encoder and LLM base weights are excluded.
+    """
+    state_dict = OrderedDict(
+        {n: p.detach().cpu() for n, p in model.named_parameters() if p.requires_grad}
+    )
+    torch.save(state_dict, path)
+    return state_dict
+
+
+def load_trainable_state_dict(model, path):
+    """Load a trainable-only checkpoint (LoRA + connector) into a full model.
+
+    Non-trainable (frozen) weights are kept as initialized from pretrained
+    HuggingFace models.  Works with both adapter-only and full state_dicts.
+    """
+    state_dict = torch.load(path, map_location="cpu")
+    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    # Only warn about truly unexpected keys (not just frozen base weights)
+    if unexpected:
+        print(f"  ⚠️  {len(unexpected)} unexpected keys in checkpoint (ignored)")
+    return model
+
 
 class SpeechLLMLightning(pl.LightningModule):
     def __init__(self, 
