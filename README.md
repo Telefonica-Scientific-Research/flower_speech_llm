@@ -166,7 +166,7 @@ python -c "from flower_speech_llm.client_app import app; print('OK')"
 ### Download MLS Dataset
 
 ```bash
-python flower_speech_llm/prepare_mls_fl.py --languages all --output-dir ./mls_audio
+python -m flower_speech_llm.prepare_mls_fl --languages all --output-dir ./mls_audio
 ```
 
 Downloads Multilingual LibriSpeech (8 languages: English, German, Dutch, French, Spanish, Italian, Portuguese, Polish) and creates per-speaker CSV files.
@@ -174,7 +174,7 @@ Downloads Multilingual LibriSpeech (8 languages: English, German, Dutch, French,
 ### Create FL Partitions
 
 ```bash
-python flower_speech_llm/create_experiment_partitions.py --base-dir ./flower_speech_llm
+python -m flower_speech_llm.create_experiment_partitions --base-dir ./flower_speech_llm
 ```
 
 | Setting | Description | Clients |
@@ -234,14 +234,16 @@ flwr stop <run_id>                # Stop a run
 
 ### Evaluate
 
+Run evaluation as a module (required for relative imports):
+
 ```bash
 # Speech-LLM
-python flower_speech_llm/evaluate_fl_model.py \
+python -m flower_speech_llm.evaluate_fl_model \
   --checkpoint FL_SLAM_checkpoints/final_model.pt \
   --test-dir flower_speech_llm/fl_MLS_test
 
 # Voxtral
-python flower_speech_llm/evaluate_fl_model.py \
+python -m flower_speech_llm.evaluate_fl_model \
   --model-type voxtral \
   --checkpoint FL_SLAM_checkpoints/final_model.pt \
   --test-dir flower_speech_llm/fl_MLS_test

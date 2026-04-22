@@ -60,6 +60,19 @@ def load_speech_llm(checkpoint_path, model_kwargs):
     return model
 
 
+def _extract_field_robust(text, field_name):
+    """Extract a field value from a (possibly malformed) JSON-like string.
+
+    Teacher-forced argmax decoding often produces slightly garbled JSON
+    (misaligned quotes, missing delimiters) that breaks ``json.loads``.
+    This helper uses a regex to pull out the value for *field_name*
+    regardless of surrounding JSON validity.
+    """
+    pattern = rf'"{field_name}"\s*:\s*"([^"]*)"'
+    match = re.search(pattern, text)
+    return match.group(1) if match else ""
+
+
 def evaluate_speech_llm_on_csv(model, csv_path, device="cuda", max_samples=None):
     """Evaluate WavLM+LLM model on a single test CSV."""
     collator = MyCollator(
@@ -97,14 +110,21 @@ def evaluate_speech_llm_on_csv(model, csv_path, device="cuda", max_samples=None)
             logits = outputs.logits
             predicted_ids = torch.argmax(logits, dim=-1).cpu()
 
-            generated_text = model.llm_tokenizer.decode(predicted_ids[0], skip_special_tokens=False)
-            target_text = model.llm_tokenizer.decode(output_tokenized_ids[0].cpu(), skip_special_tokens=False)
+            # Decode only output-portion predictions (where labels != -100).
+            # This mirrors the Voxtral evaluation and avoids garbage from
+            # input/speech positions that breaks JSON extraction.
+            label_mask = (label_ids[0] != -100).cpu()
+            output_pred_ids = predicted_ids[0][label_mask]
+            generated_text = model.llm_tokenizer.decode(output_pred_ids, skip_special_tokens=True)
 
-            extracted_pred = model.extract_prediction_values(generated_text)
-            extracted_target = model.extract_prediction_values(target_text)
+            target_text = model.llm_tokenizer.decode(
+                output_tokenized_ids[0].cpu(), skip_special_tokens=True
+            )
 
-            pred_transcript = extracted_pred.get("Transcript", "")
-            target_transcript = extracted_target.get("Transcript", "")
+            # Robust field extraction — tolerates slightly malformed JSON
+            # produced by teacher-forced argmax decoding.
+            pred_transcript = _extract_field_robust(generated_text, "Transcript")
+            target_transcript = _extract_field_robust(target_text, "Transcript")
 
             if target_transcript:
                 wer_score = wer(target_transcript.lower(), pred_transcript.lower())

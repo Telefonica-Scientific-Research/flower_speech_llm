@@ -100,6 +100,34 @@ class SpeechLLMLightning(pl.LightningModule):
         self.log("train/loss", loss, on_epoch=False)
         return loss
     
+    def _decode_output_only(self, predicted_ids, label_ids):
+        """Decode only the output-portion predictions (where labels != -100).
+
+        Teacher-forced argmax over the full sequence produces garbage for
+        input / speech-embedding positions.  Decoding only the output
+        portion yields a much cleaner string for metric extraction.
+        """
+        label_mask = (label_ids[0] != -100).cpu()
+        output_pred_ids = predicted_ids[0].cpu()[label_mask]
+        return self.llm_tokenizer.decode(output_pred_ids, skip_special_tokens=True)
+
+    @staticmethod
+    def _extract_field_robust(text, field_name):
+        """Extract a field value from (possibly malformed) JSON-like text."""
+        pattern = rf'"{field_name}"\s*:\s*"([^"]*)"'
+        match = re.search(pattern, text)
+        return match.group(1) if match else ""
+
+    def _extract_all_fields_robust(self, text):
+        """Extract all known fields via robust regex (no JSON parsing)."""
+        fields = {}
+        for field in ("Transcript", "Response", "SpeechActivity", "Gender",
+                       "Emotion", "Age", "Accent"):
+            val = self._extract_field_robust(text, field)
+            if val:
+                fields[field] = val
+        return fields
+
     def validation_step(self, batch, batch_idx):
             mel, pre_tokenized_ids, post_tokenized_ids, output_tokenized_ids = batch
             embeds, atts, label_ids = self.encode(mel, pre_tokenized_ids, post_tokenized_ids, output_tokenized_ids)
@@ -108,19 +136,20 @@ class SpeechLLMLightning(pl.LightningModule):
             self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
             
             logits = outputs.logits
-            predicted_ids = torch.argmax(logits, dim=-1).cpu()
+            predicted_ids = torch.argmax(logits, dim=-1)
 
-            generated_output_text = self.llm_tokenizer.decode(predicted_ids[0], skip_special_tokens=False)
-            target_text = self.llm_tokenizer.decode(output_tokenized_ids[0], skip_special_tokens=False)
+            # Decode only output-portion predictions to avoid input-position noise
+            generated_output_text = self._decode_output_only(predicted_ids, label_ids)
+            target_text = self.llm_tokenizer.decode(output_tokenized_ids[0], skip_special_tokens=True)
             
-            extracted_pred = self.extract_prediction_values(generated_output_text)
-            extracted_target = self.extract_prediction_values(target_text)
+            # Robust field extraction (tolerates malformed JSON from teacher forcing)
+            extracted_pred = self._extract_all_fields_robust(generated_output_text)
+            extracted_target = self._extract_all_fields_robust(target_text)
 
             keys = extracted_target.keys()
-            pred_keys = extracted_pred.keys()
 
             for key in keys:
-                if key not in pred_keys:
+                if key not in extracted_pred:
                     extracted_pred[key] = "NA"
 
             if 'Transcript' in keys:
@@ -165,8 +194,8 @@ class SpeechLLMLightning(pl.LightningModule):
                 # Use wandb.log to log prediction and truth texts
                 wandb.log({
                     f"val_sample_{sample_idx}_pred": wandb.Html(f"<pre>{str(extracted_pred)}</pre>"), 
-                    f"val_sample_{sample_idx}_target": wandb.Html(f"<pre>{str(target_text).replace('<s>', '').replace('</s>', '')}</pre>"),
-                    f"val_sample_{sample_idx}_gen": wandb.Html(f"<pre>{generated_output_text.replace('<s>', '').replace('</s>', '')}</pre>"),
+                    f"val_sample_{sample_idx}_target": wandb.Html(f"<pre>{str(extracted_target)}</pre>"),
+                    f"val_sample_{sample_idx}_gen": wandb.Html(f"<pre>{generated_output_text}</pre>"),
                 }, commit=False)
 
             return {"val_loss": loss}
@@ -181,18 +210,18 @@ class SpeechLLMLightning(pl.LightningModule):
             logits = outputs.logits
             predicted_ids = torch.argmax(logits, dim=-1)
 
-            input_token_length = output_tokenized_ids.shape[1]
-            generated_output_text = self.llm_tokenizer.decode(predicted_ids[0], skip_special_tokens=False)
-            target_text = self.llm_tokenizer.decode(output_tokenized_ids[0], skip_special_tokens=False)
+            # Decode only output-portion predictions to avoid input-position noise
+            generated_output_text = self._decode_output_only(predicted_ids, label_ids)
+            target_text = self.llm_tokenizer.decode(output_tokenized_ids[0], skip_special_tokens=True)
             
-            extracted_pred = self.extract_prediction_values(generated_output_text)
-            extracted_target = self.extract_prediction_values(target_text)
+            # Robust field extraction (tolerates malformed JSON from teacher forcing)
+            extracted_pred = self._extract_all_fields_robust(generated_output_text)
+            extracted_target = self._extract_all_fields_robust(target_text)
 
             keys = extracted_target.keys()
-            pred_keys = extracted_pred.keys()
 
             for key in keys:
-                if key not in pred_keys:
+                if key not in extracted_pred:
                     extracted_pred[key] = "NA"
 
             if 'Transcript' in keys:
