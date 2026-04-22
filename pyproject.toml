@@ -20,6 +20,7 @@ dependencies = [
     "jiwer>=3.0.0",
     "wandb>=0.15.0",
     "peft>=0.10.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
