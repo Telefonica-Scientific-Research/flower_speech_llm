@@ -25,6 +25,7 @@ min-fit-clients:     2
 min-evaluate-clients: 2
 
 # ---- Client Training ----
+# Voxtral supports true batching (collator handles variable-length audio).
 local-epochs:          10
 train-batch-size:      4
 train-batch-per-epoch: 200

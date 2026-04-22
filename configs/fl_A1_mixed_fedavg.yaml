@@ -37,10 +37,12 @@ min-fit-clients:     2
 min-evaluate-clients: 2
 
 # ---- Client Training ----
+# NOTE: train-batch-size must be 1 for speech-llm (collator processes one
+# sample at a time).  Use grad-accumulate-steps for effective batch size.
 local-epochs:          10
-train-batch-size:      4
+train-batch-size:      1
 train-batch-per-epoch: 200
-grad-accumulate-steps: 4
+grad-accumulate-steps: 16
 num-workers:           3
 
 # ---- Optimizer ----

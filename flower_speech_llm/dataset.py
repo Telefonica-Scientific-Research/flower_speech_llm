@@ -16,15 +16,25 @@ class MyCollator:
         self.hubert_processor = AutoFeatureExtractor.from_pretrained(
             "microsoft/wavlm-base")  # change according to the encoder
 
+    def _extract_features(self, waveform):
+        """Extract audio features from a raw waveform tensor."""
+        if waveform is None:
+            return None
+        if "openai/whisper" in self.audio_encoder_name:
+            return self.wav_2_mel(waveform).unsqueeze(0)
+        return self.hubert_processor(
+            waveform.squeeze(), return_tensors="pt", sampling_rate=16000
+        ).input_values
+
     def __call__(self, batch):
+        # NOTE: The encoder concatenates [pre_prompt, speech_embeds, post_prompt,
+        # output] along the sequence dimension.  Because audio lengths vary per
+        # sample, true batching (batch_size>1) would require complex padding /
+        # packing.  The original code processes a single sample per collate call;
+        # we preserve that contract here.  Use grad_accumulate_steps for effective
+        # batch size, and DataLoader workers + prefetch for throughput.
         waveform, pre_speech_prompt, post_speech_prompt, output_prompt, complete_prompt = batch[0]
-        if waveform is not None:
-            if "openai/whisper" in self.audio_encoder_name:
-                mel = self.wav_2_mel(waveform).unsqueeze(0)
-            else:
-                mel = self.hubert_processor(waveform.squeeze(), return_tensors="pt", sampling_rate=16000).input_values
-        else:
-            mel = None
+        mel = self._extract_features(waveform)
 
         pre_tokenized_ids = \
             self.tokenizer(pre_speech_prompt, padding="do_not_pad", return_tensors='pt', truncation=False,
