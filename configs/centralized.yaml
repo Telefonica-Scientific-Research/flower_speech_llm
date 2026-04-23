@@ -28,8 +28,8 @@ lora-alpha:          16
 
 # ---- Optimizer ----
 max-lr:              0.0001
-total-training-step: 10000000
-warmup-steps:        100
+total-training-step: 2000000
+warmup-steps:        1000
 
 # ---- Training ----
 max-epochs:            20        # ~18 epochs ≈ 40 FL rounds equivalent

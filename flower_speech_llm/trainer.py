@@ -89,7 +89,19 @@ class SpeechLLMLightning(pl.LightningModule):
             {"params": self.llm_model.parameters(), "lr": self.max_lr},
         ]
         optimizer = Adam(opt, lr=self.max_lr)
-        return optimizer
+
+        def lr_lambda(current_step):
+            if current_step < self.warmup_steps:
+                return current_step / max(1, self.warmup_steps)
+            progress = (current_step - self.warmup_steps) / max(
+                1, self.total_training_step - self.warmup_steps)
+            return max(0.0, 0.5 * (1.0 + np.cos(np.pi * progress)))
+
+        scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {"scheduler": scheduler, "interval": "step"},
+        }
 
     def encode(self, mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask,
                out_ids, out_mask, return_embedding_loss=False):
@@ -154,6 +166,9 @@ class SpeechLLMLightning(pl.LightningModule):
             mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask)
         outputs = self.forward(embeds, atts, label_ids)
         loss =  outputs["loss"]
+        if torch.isnan(loss) or torch.isinf(loss):
+            print(f"[WARN] NaN/Inf loss at step {self.global_step}, skipping")
+            return None
         self.log("train/loss", loss, on_epoch=False)
         return loss
     

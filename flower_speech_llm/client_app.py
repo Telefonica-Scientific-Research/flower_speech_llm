@@ -92,8 +92,8 @@ def build_model(context: Context):
         return VoxtralLightning(
             model=model, processor=processor,
             max_lr=float(cfg.get("max-lr", 5e-5)),
-            warmup_steps=int(cfg.get("warmup-steps", 100)),
-            total_training_step=int(cfg.get("total-training-step", 10_000_000)),
+            warmup_steps=int(cfg.get("warmup-steps", 1000)),
+            total_training_step=int(cfg.get("total-training-step", 2_000_000)),
         )
     else:
         model_config = {
@@ -108,8 +108,8 @@ def build_model(context: Context):
             "lora_r":               int(cfg.get("lora-r", 8)),
             "lora_alpha":           int(cfg.get("lora-alpha", 16)),
             "max_lr":               float(cfg.get("max-lr", 1e-4)),
-            "total_training_step":  int(cfg.get("total-training-step", 10_000_000)),
-            "warmup_steps":         int(cfg.get("warmup-steps", 100)),
+            "total_training_step":  int(cfg.get("total-training-step", 2_000_000)),
+            "warmup_steps":         int(cfg.get("warmup-steps", 1000)),
         }
         return SpeechLLMLightning(**model_config)
 

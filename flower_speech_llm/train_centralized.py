@@ -107,8 +107,8 @@ def parse_args():
 
     # ---- Optimizer config (matches pyproject.toml) ----
     p.add_argument("--max-lr", type=float, default=1e-4)
-    p.add_argument("--total-training-step", type=int, default=10_000_000)
-    p.add_argument("--warmup-steps", type=int, default=100)
+    p.add_argument("--total-training-step", type=int, default=2_000_000)
+    p.add_argument("--warmup-steps", type=int, default=1000)
 
     # ---- Training config ----
     p.add_argument("--max-epochs", type=int, default=20,
