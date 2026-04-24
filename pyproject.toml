@@ -60,8 +60,8 @@ use-lora             = true
 lora-r               = 8
 lora-alpha           = 16
 max-lr               = 0.0001
-total-training-step  = 10000000
-warmup-steps         = 100
+total-training-step  = 2000
+warmup-steps         = 50
 
 # ---- Voxtral Config (used when model-type = "voxtral") ----
 voxtral-model-name   = "mistralai/Voxtral-Mini-3B-2507"
@@ -130,7 +130,9 @@ pretrained-checkpoint = ""   # Set to path of .ckpt to resume from a checkpoint
 # [tool.flwr.federations]
 default = "local-simulation"
 
+# Simulation options are now passed via --federation-config in run_fl.sh
+# See: https://flower.ai/docs/framework/ref-flower-configuration.html
 # [tool.flwr.federations.local-simulation]
-options.num-supernodes = 316
-options.backend.client-resources.num-cpus = 4
-options.backend.client-resources.num-gpus = 1.0  # 1 full GPU per client = max 4 concurrent clients on 4xL40S
+# options.num-supernodes = 316
+# options.backend.client-resources.num-cpus = 4
+# options.backend.client-resources.num-gpus = 1.0

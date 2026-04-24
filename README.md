@@ -211,24 +211,36 @@ python -m flower_speech_llm.create_experiment_partitions --base-dir ./flower_spe
 
 ## Run Experiments
 
-### Speech-LLM (default)
+### FL Experiments
+
+Use the `run_fl.sh` wrapper to launch FL experiments from a YAML config file. The wrapper reads the config, formats it as `--run-config` key-value pairs, and passes simulation options (prefixed with `_` in the YAML) via `--federation-config`.
 
 ```bash
 # A1: Mixed-multilingual IID + FedAvg
-flwr run . --run-config 'csv-train-dir="/path/to/fl_A1_mixed_316" csv-dev-dir="/path/to/fl_dev_316"'
+CUDA_VISIBLE_DEVICES=0,1 ./run_fl.sh configs/fl_A1_mixed_fedavg.yaml
 
 # B1: One-speaker non-IID + FedAvg
-flwr run . --run-config 'csv-train-dir="/path/to/fl_B1_speaker_316" csv-dev-dir="/path/to/fl_dev_316"'
+CUDA_VISIBLE_DEVICES=0,1 ./run_fl.sh configs/fl_B1_speaker_fedavg.yaml
 
 # B2: One-speaker non-IID + FedProx
-flwr run . --run-config 'csv-train-dir="/path/to/fl_B1_speaker_316" csv-dev-dir="/path/to/fl_dev_316" fedprox-mu=0.01'
+CUDA_VISIBLE_DEVICES=0,1 ./run_fl.sh configs/fl_B2_speaker_fedprox.yaml
+
+# Voxtral
+CUDA_VISIBLE_DEVICES=0,1 ./run_fl.sh configs/fl_voxtral.yaml
 ```
 
-### Voxtral
+Extra arguments are forwarded to `flwr run`, e.g. `./run_fl.sh configs/fl_A1_mixed_fedavg.yaml --stream`.
+
+**YAML config structure:** Each YAML file contains all `[tool.flwr.app.config]` keys (model, training, data paths, etc.) plus simulation options prefixed with `_` (`_num-supernodes`, `_client-num-cpus`, `_client-num-gpus`). The `_` prefix excludes simulation keys from `--run-config` — they are passed separately via `--federation-config`.
+
+<details>
+<summary>Manual flwr run (without wrapper)</summary>
 
 ```bash
-flwr run . --run-config 'model-type="voxtral" csv-train-dir="/path/to/fl_A1_mixed_316" csv-dev-dir="/path/to/fl_dev_316"'
+flwr run . --run-config 'csv-train-dir="/path/to/fl_A1_mixed_316" csv-dev-dir="/path/to/fl_dev_316"'
 ```
+
+</details>
 
 ### Centralized Baseline (No Federation)
 
@@ -435,7 +447,11 @@ flower_speech_llm/
 ├── deploy/
 │   ├── flower_speech_llm.def           # Singularity definition
 │   ├── Dockerfile                      # Docker image
-│   └── run_bsc.sh                      # SLURM job script for BSC HPC
+│   ├── run_centralized_speech_llm.sh   # SLURM: centralized training
+│   ├── run_fl_A1_speech_llm.sh         # SLURM: FL experiment A1
+│   ├── run_fl_B1_speech_llm.sh         # SLURM: FL experiment B1
+│   └── run_fl_B2_speech_llm.sh         # SLURM: FL experiment B2
+├── run_fl.sh                           # Wrapper: YAML config → flwr run
 ├── pyproject.toml                      # Project + Flower config
 └── README.md
 ```

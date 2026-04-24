@@ -54,7 +54,7 @@ checkpoint-dir:        FL_checkpoints_voxtral
 checkpoint-offset:     0
 pretrained-checkpoint: ""
 
-# ---- Simulation ----
-num-supernodes:        316
-client-num-cpus:       4
-client-num-gpus:       1.0
+# ---- Simulation (prefixed with _ to exclude from --run-config) ----
+_num-supernodes:        316
+_client-num-cpus:       4
+_client-num-gpus:       1.0
