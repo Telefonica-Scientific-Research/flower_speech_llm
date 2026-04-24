@@ -356,6 +356,17 @@ grad-accumulate-steps = 2          # effective batch = 16
 max-lr                = 0.0001
 ```
 
+### LR Schedule
+
+All training uses a **cosine LR schedule with linear warmup** (configured via `warmup-steps` and `total-training-step`).
+
+**FL vs centralized:** In FL, each round creates a fresh optimizer and scheduler, so the schedule resets every round. The FL configs set `total-training-step` to the number of steps per round (200 batches × 10 local epochs = 2000) with a short warmup (50 steps). In centralized training, the scheduler runs continuously across the entire training run, so `total-training-step` reflects the full budget (~2M steps) with a longer warmup (1000 steps).
+
+| Setting | FL (per round) | Centralized |
+|---------|---------------|-------------|
+| `total-training-step` | 2,000 | 2,000,000 |
+| `warmup-steps` | 50 | 1,000 |
+
 ### FedProx & LR Decay
 
 ```toml

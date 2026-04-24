@@ -36,8 +36,8 @@ num-workers:           3
 
 # ---- Optimizer ----
 max-lr:              0.0001
-total-training-step: 10000000
-warmup-steps:        100
+total-training-step: 2000    # steps per round: 200 batches × 10 local epochs
+warmup-steps:        50      # brief warmup per round (scheduler resets each round)
 
 # ---- LR Decay ----
 lr-decay-factor:     0.9
