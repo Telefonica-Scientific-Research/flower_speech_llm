@@ -238,6 +238,7 @@ def train(msg: Message, context: Context) -> Message:
         max_epochs=local_epochs,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=1,
+        precision="bf16-mixed",
         enable_checkpointing=False,
         logger=wandb_logger,
         enable_progress_bar=True,
@@ -295,6 +296,7 @@ def evaluate(msg: Message, context: Context) -> Message:
     trainer = pl.Trainer(
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=1,
+        precision="bf16-mixed",
         enable_checkpointing=False,
         logger=wandb_logger,
         enable_progress_bar=True,
