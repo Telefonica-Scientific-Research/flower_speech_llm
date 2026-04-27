@@ -45,7 +45,8 @@ class MyCollator:
             return None
         if "openai/whisper" in self.audio_encoder_name:
             inputs = self.feature_extractor(
-                waveform.squeeze().numpy(), return_tensors="pt", sampling_rate=16000
+                waveform.squeeze().numpy(), return_tensors="pt",
+                sampling_rate=16000, padding="max_length",
             )
             return inputs.input_features
         return self.feature_extractor(
@@ -77,9 +78,10 @@ class MyCollator:
         if waveforms[0] is not None:
             if "openai/whisper" in self.audio_encoder_name:
                 # Whisper: mel spectrogram via HuggingFace WhisperFeatureExtractor
+                # padding="max_length" pads to 3000 frames (30s) as required by WhisperModel
                 inputs = self.feature_extractor(
                     waveforms, return_tensors="pt", sampling_rate=16000,
-                    padding=True, return_attention_mask=True,
+                    padding="max_length", return_attention_mask=True,
                 )
                 mel = inputs.input_features
                 mel_mask = inputs.get("attention_mask", torch.ones(mel.shape[:2], dtype=torch.long))
