@@ -206,10 +206,11 @@ class SpeechLLMLightning(pl.LightningModule):
                 mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask)
             outputs = self.forward(embeds, atts, label_ids)
             loss = outputs["loss"]
-            self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+            self.log("val/loss", loss.detach(), on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
             
             logits = outputs.logits
             predicted_ids = torch.argmax(logits, dim=-1)
+            del outputs, logits, embeds, atts  # free GPU memory
 
             # Decode only output-portion predictions to avoid input-position noise
             generated_output_text = self._decode_output_only(predicted_ids, label_ids)
@@ -270,8 +271,6 @@ class SpeechLLMLightning(pl.LightningModule):
                     f"val_sample_{sample_idx}_target": wandb.Html(f"<pre>{str(extracted_target)}</pre>"),
                     f"val_sample_{sample_idx}_gen": wandb.Html(f"<pre>{generated_output_text}</pre>"),
                 }, commit=False)
-
-            return {"val_loss": loss}
     
     def test_step(self, batch, batch_idx):
             mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask = batch
@@ -279,10 +278,11 @@ class SpeechLLMLightning(pl.LightningModule):
                 mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask)
             outputs = self.forward(embeds, atts, label_ids)
             loss = outputs["loss"]
-            self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+            self.log("val/loss", loss.detach(), on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
             
             logits = outputs.logits
             predicted_ids = torch.argmax(logits, dim=-1)
+            del outputs, logits, embeds, atts  # free GPU memory
 
             # Decode only output-portion predictions to avoid input-position noise
             generated_output_text = self._decode_output_only(predicted_ids, label_ids)
@@ -334,8 +334,6 @@ class SpeechLLMLightning(pl.LightningModule):
                 target_accent = extracted_target['Accent']
                 predicted_accent = extracted_pred['Accent']
                 self.log("val/accent", float(target_accent.lower()==predicted_accent.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
-
-            return {"val_loss": loss}
     
     def on_validation_epoch_start(self):
         """Select two random validation samples to log for each epoch."""
