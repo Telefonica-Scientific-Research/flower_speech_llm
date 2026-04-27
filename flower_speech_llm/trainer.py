@@ -206,7 +206,7 @@ class SpeechLLMLightning(pl.LightningModule):
                 mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask)
             outputs = self.forward(embeds, atts, label_ids)
             loss = outputs["loss"]
-            self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
             
             logits = outputs.logits
             predicted_ids = torch.argmax(logits, dim=-1)
@@ -229,38 +229,38 @@ class SpeechLLMLightning(pl.LightningModule):
                 target_transcript = extracted_target['Transcript']
                 predicted_transcript = extracted_pred['Transcript']
                 wer_metric = wer(target_transcript.lower(), predicted_transcript.lower())
-                self.log("val/wer", wer_metric, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+                self.log("val/wer", wer_metric, on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
             if 'Response' in keys:
                 target_transcript = extracted_target['Response']
                 predicted_transcript = extracted_pred['Response']
                 wer_metric = wer(target_transcript.lower(), predicted_transcript.lower())
-                self.log("val/response_wer", wer_metric, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+                self.log("val/response_wer", wer_metric, on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
             if 'SpeechActivity' in keys:
                 target_isspeech = extracted_target['SpeechActivity']
                 predicted_isspeech = extracted_pred['SpeechActivity']
-                self.log("val/speech_activity", float(target_isspeech.lower()==predicted_isspeech.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+                self.log("val/speech_activity", float(target_isspeech.lower()==predicted_isspeech.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
             if 'Gender' in keys:
                 target_gender = extracted_target['Gender']
                 predicted_gender = extracted_pred['Gender']
-                self.log("val/gender", float(target_gender.lower()==predicted_gender.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+                self.log("val/gender", float(target_gender.lower()==predicted_gender.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
             if 'Emotion' in keys:
                 target_emotion = extracted_target['Emotion']
                 predicted_emotion = extracted_pred['Emotion']
-                self.log("val/emotion", float(target_emotion.lower()==predicted_emotion.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+                self.log("val/emotion", float(target_emotion.lower()==predicted_emotion.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
             if 'Age' in keys:
                 target_age = extracted_target['Age']
                 predicted_age = extracted_pred['Age']
-                self.log("val/age", float(target_age.lower()==predicted_age.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+                self.log("val/age", float(target_age.lower()==predicted_age.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
             if 'Accent' in keys:
                 target_accent = extracted_target['Accent']
                 predicted_accent = extracted_pred['Accent']
-                self.log("val/accent", float(target_accent.lower()==predicted_accent.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+                self.log("val/accent", float(target_accent.lower()==predicted_accent.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
             if batch_idx in self.selected_samples_for_logging:
                 sample_idx = self.selected_samples_for_logging.index(batch_idx)
@@ -279,7 +279,7 @@ class SpeechLLMLightning(pl.LightningModule):
                 mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask)
             outputs = self.forward(embeds, atts, label_ids)
             loss = outputs["loss"]
-            self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
             
             logits = outputs.logits
             predicted_ids = torch.argmax(logits, dim=-1)
@@ -302,38 +302,38 @@ class SpeechLLMLightning(pl.LightningModule):
                 target_transcript = extracted_target['Transcript']
                 predicted_transcript = extracted_pred['Transcript']
                 wer_metric = wer(target_transcript.lower(), predicted_transcript.lower())
-                self.log("val/wer", wer_metric, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+                self.log("val/wer", wer_metric, on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
             if 'Response' in keys:
                 target_transcript = extracted_target['Response']
                 predicted_transcript = extracted_pred['Response']
                 wer_metric = wer(target_transcript.lower(), predicted_transcript.lower())
-                self.log("val/response_wer", wer_metric, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+                self.log("val/response_wer", wer_metric, on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
             if 'SpeechActivity' in keys:
                 target_isspeech = extracted_target['SpeechActivity']
                 predicted_isspeech = extracted_pred['SpeechActivity']
-                self.log("val/speech_activity", float(target_isspeech.lower()==predicted_isspeech.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+                self.log("val/speech_activity", float(target_isspeech.lower()==predicted_isspeech.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
             if 'Gender' in keys:
                 target_gender = extracted_target['Gender']
                 predicted_gender = extracted_pred['Gender']
-                self.log("val/gender", float(target_gender.lower()==predicted_gender.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+                self.log("val/gender", float(target_gender.lower()==predicted_gender.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
             if 'Emotion' in keys:
                 target_emotion = extracted_target['Emotion']
                 predicted_emotion = extracted_pred['Emotion']
-                self.log("val/emotion", float(target_emotion.lower()==predicted_emotion.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+                self.log("val/emotion", float(target_emotion.lower()==predicted_emotion.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
             if 'Age' in keys:
                 target_age = extracted_target['Age']
                 predicted_age = extracted_pred['Age']
-                self.log("val/age", float(target_age.lower()==predicted_age.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+                self.log("val/age", float(target_age.lower()==predicted_age.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
             if 'Accent' in keys:
                 target_accent = extracted_target['Accent']
                 predicted_accent = extracted_pred['Accent']
-                self.log("val/accent", float(target_accent.lower()==predicted_accent.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+                self.log("val/accent", float(target_accent.lower()==predicted_accent.lower()), on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
             return {"val_loss": loss}
     
