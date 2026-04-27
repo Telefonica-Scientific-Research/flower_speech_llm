@@ -14,8 +14,23 @@ from typing import Dict, List
 
 import torch
 import torchaudio
+import soundfile as sf
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
+
+
+def _load_audio(path: str):
+    """Load audio via soundfile (avoids torchcodec issues in containers)."""
+    try:
+        data, sr = sf.read(path, dtype="float32")
+        waveform = torch.from_numpy(data)
+        if waveform.ndim == 1:
+            waveform = waveform.unsqueeze(0)
+        else:
+            waveform = waveform.T
+        return waveform, sr
+    except Exception:
+        return torchaudio.load(path)
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +73,7 @@ class VoxtralCSVDataset(Dataset):
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
-        waveform, sr = torchaudio.load(row["audio_path"])
+        waveform, sr = _load_audio(row["audio_path"])
         # Resample to 16kHz if needed
         if sr != 16000:
             waveform = torchaudio.functional.resample(waveform, sr, 16000)

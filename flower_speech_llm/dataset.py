@@ -4,9 +4,28 @@ import os
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torchaudio
+import soundfile as sf
 import pandas as pd
 import random
 import numpy as np
+
+
+def _load_audio(path: str):
+    """Load audio file, returning (waveform, sample_rate).
+
+    Uses soundfile as primary backend to avoid torchcodec issues
+    in containerised / HPC environments.  Falls back to torchaudio.
+    """
+    try:
+        data, sr = sf.read(path, dtype="float32")
+        waveform = torch.from_numpy(data)
+        if waveform.ndim == 1:
+            waveform = waveform.unsqueeze(0)
+        else:
+            waveform = waveform.T  # (channels, samples)
+        return waveform, sr
+    except Exception:
+        return torchaudio.load(path)
 
 
 class MyCollator:
@@ -119,7 +138,7 @@ class AudioDataset(Dataset):
         if pd.isna(audio_path):
             waveform = None
         else:
-            waveform, sample_rate = torchaudio.load(audio_path)
+            waveform, sample_rate = _load_audio(audio_path)
 
         # Prepare labels dictionary based on mode and probability
         labels_str = {}

@@ -37,6 +37,7 @@ import torch
 import pytorch_lightning as pl
 import pandas as pd
 import torchaudio
+import soundfile as sf
 from jiwer import wer
 
 from .trainer import SpeechLLMLightning
@@ -186,7 +187,15 @@ class VoxtralEvalDataset(Dataset):
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
-        waveform, sr = torchaudio.load(row["audio_path"])
+        try:
+            data, sr = sf.read(row["audio_path"], dtype="float32")
+            waveform = torch.from_numpy(data)
+            if waveform.ndim == 1:
+                waveform = waveform.unsqueeze(0)
+            else:
+                waveform = waveform.T
+        except Exception:
+            waveform, sr = torchaudio.load(row["audio_path"])
         if sr != 16000:
             waveform = torchaudio.functional.resample(waveform, sr, 16000)
         return {
