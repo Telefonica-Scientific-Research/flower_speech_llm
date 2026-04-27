@@ -10,16 +10,9 @@ if [[ $# -lt 1 ]]; then
     exit 1
 fi
 
-# Force Ray to respect CUDA_VISIBLE_DEVICES set by the user.
-# By default, Ray overrides CUDA_VISIBLE_DEVICES for each worker with its
-# own internal GPU index (e.g. "0"), which ignores the parent's restriction
-# and routes workers to the wrong physical GPU.
-# Setting RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=1 tells Ray NOT to
-# override the env var, so workers inherit the parent's CUDA_VISIBLE_DEVICES.
-if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
-    export CUDA_VISIBLE_DEVICES
-    export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=1
-fi
+# Let Ray manage per-worker CUDA_VISIBLE_DEVICES assignment.
+# Do NOT set RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES — it prevents
+# Ray from assigning individual GPUs to FL client actors.
 
 CONFIG="$1"; shift
 
@@ -54,10 +47,10 @@ else:
     import torch
     total_gpus = torch.cuda.device_count()
 parts = [
-    f'num-supernodes={num_supernodes}',
-    f'client-resources-num-cpus={num_cpus}',
-    f'client-resources-num-gpus={num_gpus}',
-    f'init-args-num-gpus={total_gpus}',
+    f'num_supernodes={num_supernodes}',
+    f'client_resources_num_cpus={num_cpus}',
+    f'client_resources_num_gpus={num_gpus}',
+    f'init_args_num_gpus={total_gpus}',
 ]
 print(' '.join(parts))
 ")
