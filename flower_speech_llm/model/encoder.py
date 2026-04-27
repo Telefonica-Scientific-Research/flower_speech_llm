@@ -54,19 +54,20 @@ class TransformerAudioEncoder(nn.Module):
 
 
 class WhisperEncoder(nn.Module):
-    """Wrapper around OpenAI Whisper encoder."""
+    """Wrapper around HuggingFace Whisper encoder."""
 
     def __init__(self, model_name: str, finetune: bool = False):
         super().__init__()
-        import whisper
-        size = model_name.split("-")[-1] if "-" in model_name else "large-v3-turbo"
-        self.model = whisper.load_model(size).encoder
+        from transformers import WhisperModel
+        whisper_model = WhisperModel.from_pretrained(model_name)
+        self.model = whisper_model.encoder
         if not finetune:
             for param in self.model.parameters():
                 param.requires_grad = False
 
-    def forward(self, x):
-        return self.model(x)
+    def forward(self, x, attention_mask=None):
+        outputs = self.model(x, attention_mask=attention_mask)
+        return outputs.last_hidden_state
 
 
 def get_audio_encoder(encoder_name: str, finetune: bool = False,

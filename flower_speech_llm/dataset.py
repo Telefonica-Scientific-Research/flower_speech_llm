@@ -32,16 +32,23 @@ class MyCollator:
     def __init__(self, audio_encoder_name, tokenizer):
         self.audio_encoder_name = audio_encoder_name
         self.tokenizer = tokenizer
-        self.hubert_processor = AutoFeatureExtractor.from_pretrained(
-            "microsoft/wavlm-base")  # change according to the encoder
+        if "openai/whisper" in audio_encoder_name:
+            from transformers import WhisperFeatureExtractor
+            self.feature_extractor = WhisperFeatureExtractor.from_pretrained(audio_encoder_name)
+        else:
+            self.feature_extractor = AutoFeatureExtractor.from_pretrained(
+                "microsoft/wavlm-base")  # change according to the encoder
 
     def _extract_features(self, waveform):
         """Extract audio features from a raw waveform tensor."""
         if waveform is None:
             return None
         if "openai/whisper" in self.audio_encoder_name:
-            return self.wav_2_mel(waveform).unsqueeze(0)
-        return self.hubert_processor(
+            inputs = self.feature_extractor(
+                waveform.squeeze().numpy(), return_tensors="pt", sampling_rate=16000
+            )
+            return inputs.input_features
+        return self.feature_extractor(
             waveform.squeeze(), return_tensors="pt", sampling_rate=16000
         ).input_values
 
@@ -69,14 +76,16 @@ class MyCollator:
         # ---- Audio features (padded) ----
         if waveforms[0] is not None:
             if "openai/whisper" in self.audio_encoder_name:
-                # Whisper: mel spectrogram (fixed length per chunk)
-                import whisper
-                mels = [self.wav_2_mel(torch.from_numpy(w).unsqueeze(0)) for w in waveforms]
-                mel = torch.stack(mels, dim=0)
-                mel_mask = torch.ones(mel.shape[:2], dtype=torch.long)
+                # Whisper: mel spectrogram via HuggingFace WhisperFeatureExtractor
+                inputs = self.feature_extractor(
+                    waveforms, return_tensors="pt", sampling_rate=16000,
+                    padding=True, return_attention_mask=True,
+                )
+                mel = inputs.input_features
+                mel_mask = inputs.get("attention_mask", torch.ones(mel.shape[:2], dtype=torch.long))
             else:
                 # WavLM / HuBERT: AutoFeatureExtractor handles padding
-                features = self.hubert_processor(
+                features = self.feature_extractor(
                     waveforms,
                     return_tensors="pt",
                     sampling_rate=16000,
@@ -114,10 +123,6 @@ class MyCollator:
                 pre_enc.input_ids, pre_enc.attention_mask,
                 post_enc.input_ids, post_enc.attention_mask,
                 out_enc.input_ids, out_enc.attention_mask)
-
-    def wav_2_mel(self, wav_tensor):
-        mel = whisper.log_mel_spectrogram(wav_tensor[0])
-        return mel
 
 
 class AudioDataset(Dataset):
