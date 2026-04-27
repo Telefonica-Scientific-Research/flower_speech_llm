@@ -99,6 +99,8 @@ def parse_args():
     p.add_argument("--connector-name", default="linear")
     p.add_argument("--llm-name", default="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
     p.add_argument("--finetune-encoder", action="store_true", default=False)
+    p.add_argument("--finetune-llm", action="store_true", default=True)
+    p.add_argument("--no-finetune-llm", dest="finetune_llm", action="store_false")
     p.add_argument("--connector-k", type=int, default=2)
     p.add_argument("--use-lora", action="store_true", default=True)
     p.add_argument("--no-lora", dest="use_lora", action="store_false")
@@ -229,6 +231,7 @@ def main():
         connector_name=args.connector_name,
         llm_name=args.llm_name,
         finetune_encoder=args.finetune_encoder,
+        finetune_llm=args.finetune_llm,
         connector_k=args.connector_k,
         use_lora=args.use_lora,
         lora_r=args.lora_r,

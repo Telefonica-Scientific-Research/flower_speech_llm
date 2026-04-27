@@ -54,6 +54,7 @@ class SpeechLLMLightning(pl.LightningModule):
                  connector_name='linear-pool',
                  llm_name="TinyLlama/TinyLlama-1.1B-Chat-v1.0", 
                  finetune_encoder=False,
+                 finetune_llm=True,
                  connector_k=5,
                  use_lora=True,
                  lora_r=32,
@@ -70,11 +71,18 @@ class SpeechLLMLightning(pl.LightningModule):
         self.llm_dim = llm_dim
         self.llm_name = llm_name
         self.finetune_encoder = finetune_encoder
+        self.finetune_llm = finetune_llm
         self.use_lora = use_lora
 
-        self.audio_encoder = get_audio_encoder(audio_encoder_name, finetune_encoder)
+        self.audio_encoder = get_audio_encoder(
+            audio_encoder_name, finetune_encoder,
+            use_lora=use_lora, lora_r=lora_r, lora_alpha=lora_alpha,
+        )
         self.connector = get_connector(connector_name, audio_enc_dim, llm_dim, connector_k)
-        self.llm_tokenizer, self.llm_model = get_llm(llm_name, use_lora, lora_r, lora_alpha)
+        self.llm_tokenizer, self.llm_model = get_llm(
+            llm_name, finetune_llm=finetune_llm,
+            use_lora=use_lora, lora_r=lora_r, lora_alpha=lora_alpha,
+        )
         
         self.max_lr = max_lr
         self.total_training_step = total_training_step

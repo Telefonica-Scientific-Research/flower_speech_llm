@@ -56,6 +56,7 @@ audio-encoder-name   = "microsoft/wavlm-large"
 connector-name       = "linear"
 llm-name             = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 finetune-encoder     = false
+finetune-llm         = true
 connector-k          = 2
 use-lora             = true
 lora-r               = 8
@@ -68,7 +69,7 @@ warmup-steps         = 50
 voxtral-model-name   = "mistralai/Voxtral-Mini-3B-2507"
 model-cache-dir      = ""
 data-language        = "en"
-# lora-r, lora-alpha, use-lora, finetune-encoder are shared with speech-llm config above
+# lora-r, lora-alpha, use-lora, finetune-encoder, finetune-llm are shared with speech-llm config above
 
 # ---- Training Config ----
 local-epochs          = 10

@@ -19,6 +19,7 @@ audio-encoder-name:  microsoft/wavlm-large
 connector-name:      linear
 llm-name:            TinyLlama/TinyLlama-1.1B-Chat-v1.0
 finetune-encoder:    false
+finetune-llm:        true
 connector-k:         2
 
 # ---- LoRA ----
@@ -44,6 +45,7 @@ val-check-interval:    0.25
 # ---- Data ----
 csv-train-dir:  flower_speech_llm/fl_A1_mixed_316
 csv-dev-dir:    flower_speech_llm/fl_MLS_dev_speaker
+csv-test-dir:   flower_speech_llm/fl_MLS_test
 
 # ---- Checkpoint / Resume ----
 pretrained-checkpoint: ""

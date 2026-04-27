@@ -60,6 +60,7 @@ def load_model_from_config(cfg: dict):
             "connector_name":       cfg.get("connector-name", "linear"),
             "llm_name":             cfg.get("llm-name", "TinyLlama/TinyLlama-1.1B-Chat-v1.0"),
             "finetune_encoder":     bool(cfg.get("finetune-encoder", False)),
+            "finetune_llm":         bool(cfg.get("finetune-llm", True)),
             "connector_k":          int(cfg.get("connector-k", 2)),
             "use_lora":             bool(cfg.get("use-lora", True)),
             "lora_r":               int(cfg.get("lora-r", 8)),

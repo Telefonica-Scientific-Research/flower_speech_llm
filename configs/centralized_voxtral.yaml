@@ -48,6 +48,7 @@ val-check-interval:    0.25
 # ---- Data ----
 csv-train-dir:  flower_speech_llm/fl_A1_mixed_316
 csv-dev-dir:    flower_speech_llm/fl_MLS_dev_speaker
+csv-test-dir:   flower_speech_llm/fl_MLS_test
 
 # ---- Checkpoint / Resume ----
 pretrained-checkpoint: ""

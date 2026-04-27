@@ -36,6 +36,7 @@ CACHE_DIR='/gpfs/scratch/ehpc628/models/'
 TORCH_EXT_DIR="/gpfs/scratch/ehpc628/jls/torch_extensions"
 SANDBOX_DIR="/gpfs/projects/ehpc628/jls/singularity_containers/flower_speech_llm"
 SCRATCH_DIR="/gpfs/scratch/ehpc628/jls/ehpc628XXX"
+REPO_DIR="/opt/flower_speech_llm"
 
 # Create necessary directories
 mkdir -p ./slurm_logs
@@ -53,21 +54,19 @@ export NCCL_SOCKET_IFNAME=ib0
 export CMD="
 # Set environment variables
 export HF_HOME=$CACHE_DIR
+export HF_HUB_CACHE=$CACHE_DIR
 export TORCH_EXTENSIONS_DIR=$TORCH_EXT_DIR
 export DS_BUILD_OPS=0
-export CUDA_VISIBLE_DEVICES=0,1,2,3
+export RAY_TMPDIR=$SCRATCH_DIR
+unset RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES
 
 # Display GPU info
 nvidia-smi
-echo 'CUDA_VISIBLE_DEVICES: '\$CUDA_VISIBLE_DEVICES
+python -c 'import torch; print(\"CUDA available:\", torch.cuda.is_available(), \"GPUs:\", torch.cuda.device_count())'
 
-cd $SANDBOX_DIR
-pip install -e .
-flwr run . --run-config \"\$(python -c \"
-import yaml
-cfg = yaml.safe_load(open('configs/fl_A1_mixed_fedavg.yaml'))
-print(' '.join(f'{k}=\\\"{v}\\\"' if isinstance(v, str) else f'{k}={v}' for k,v in cfg.items() if not k.startswith('_')))
-\")\"
+cd $REPO_DIR
+. /opt/venv/bin/activate
+./run_fl.sh configs/fl_A1_mixed_fedavg.yaml
 
 echo 'Experiment A1 completed successfully'
 "

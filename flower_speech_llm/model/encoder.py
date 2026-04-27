@@ -2,16 +2,39 @@
 
 import torch
 import torch.nn as nn
+import warnings
 from transformers import AutoModel, AutoFeatureExtractor
+from peft import LoraConfig, get_peft_model
 
 
 class TransformerAudioEncoder(nn.Module):
     """Wrapper around a HuggingFace audio encoder (WavLM, HuBERT, Wav2Vec2, etc.)."""
 
-    def __init__(self, model_name: str, finetune: bool = False):
+    def __init__(self, model_name: str, finetune: bool = False,
+                 use_lora: bool = False, lora_r: int = 8, lora_alpha: int = 16):
         super().__init__()
         self.model = AutoModel.from_pretrained(model_name)
-        if not finetune:
+        if finetune and use_lora:
+            # Freeze all, then apply LoRA on attention projections
+            for param in self.model.parameters():
+                param.requires_grad = False
+            lora_config = LoraConfig(
+                r=lora_r,
+                lora_alpha=lora_alpha,
+                lora_dropout=0.05,
+                target_modules=["q_proj", "k_proj", "v_proj"],
+                bias="none",
+                inference_mode=False,
+            )
+            self.model = get_peft_model(self.model, lora_config)
+        elif finetune and not use_lora:
+            warnings.warn(
+                f"Full fine-tuning of encoder '{model_name}' — all weights are "
+                "trainable. This is memory-intensive and increases FL communication "
+                "cost. Consider use_lora=True for parameter-efficient training.",
+                stacklevel=2,
+            )
+        elif not finetune:
             for param in self.model.parameters():
                 param.requires_grad = False
 
@@ -46,12 +69,17 @@ class WhisperEncoder(nn.Module):
         return self.model(x)
 
 
-def get_audio_encoder(encoder_name: str, finetune: bool = False) -> nn.Module:
+def get_audio_encoder(encoder_name: str, finetune: bool = False,
+                      use_lora: bool = False, lora_r: int = 8,
+                      lora_alpha: int = 16) -> nn.Module:
     """Factory for audio encoders.
 
     Args:
         encoder_name: HuggingFace model ID or whisper model name.
         finetune: Whether to allow gradients through the encoder.
+        use_lora: If True and finetune is True, apply LoRA instead of full unfreeze.
+        lora_r: LoRA rank (only used when use_lora=True).
+        lora_alpha: LoRA alpha scaling (only used when use_lora=True).
 
     Returns:
         An nn.Module audio encoder.
@@ -60,4 +88,4 @@ def get_audio_encoder(encoder_name: str, finetune: bool = False) -> nn.Module:
         return WhisperEncoder(encoder_name, finetune)
     else:
         # WavLM, HuBERT, Wav2Vec2, etc.
-        return TransformerAudioEncoder(encoder_name, finetune)
+        return TransformerAudioEncoder(encoder_name, finetune, use_lora, lora_r, lora_alpha)

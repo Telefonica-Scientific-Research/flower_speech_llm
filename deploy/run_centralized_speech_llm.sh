@@ -37,6 +37,7 @@ CACHE_DIR='/gpfs/scratch/ehpc628/models/'
 TORCH_EXT_DIR="/gpfs/scratch/ehpc628/jls/torch_extensions"
 SANDBOX_DIR="/gpfs/projects/ehpc628/jls/singularity_containers/flower_speech_llm"
 SCRATCH_DIR="/gpfs/scratch/ehpc628/jls/ehpc628XXX"
+REPO_DIR="/opt/flower_speech_llm"
 
 # Create necessary directories
 mkdir -p ./slurm_logs
@@ -54,6 +55,7 @@ export NCCL_SOCKET_IFNAME=ib0
 export CMD="
 # Set environment variables
 export HF_HOME=$CACHE_DIR
+export HF_HUB_CACHE=$CACHE_DIR
 export TORCH_EXTENSIONS_DIR=$TORCH_EXT_DIR
 # export TRANSFORMERS_CACHE=$CACHE_DIR
 # export HF_DATASETS_CACHE=$CACHE_DIR
@@ -69,8 +71,8 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3
 nvidia-smi
 echo 'CUDA_VISIBLE_DEVICES: '\$CUDA_VISIBLE_DEVICES
 
-cd $SANDBOX_DIR
-pip install -e .
+cd $REPO_DIR
+. /opt/venv/bin/activate
 python -m flower_speech_llm.train_centralized --config configs/centralized.yaml
 
 echo 'Experiment completed successfully'

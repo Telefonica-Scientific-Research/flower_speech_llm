@@ -13,6 +13,7 @@ audio-encoder-name:  microsoft/wavlm-large
 connector-name:      linear
 llm-name:            TinyLlama/TinyLlama-1.1B-Chat-v1.0
 finetune-encoder:    false
+finetune-llm:        true
 connector-k:         2
 
 # ---- LoRA ----

@@ -1,12 +1,14 @@
 """LLM wrapper with optional LoRA fine-tuning."""
 
 import torch
+import warnings
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig, get_peft_model, TaskType
 
 
 def get_llm(
     model_name: str,
+    finetune_llm: bool = True,
     use_lora: bool = True,
     lora_r: int = 8,
     lora_alpha: int = 16,
@@ -15,7 +17,8 @@ def get_llm(
 
     Args:
         model_name: HuggingFace model ID (e.g. "TinyLlama/TinyLlama-1.1B-Chat-v1.0").
-        use_lora: Whether to apply LoRA adapters.
+        finetune_llm: Whether to fine-tune the LLM (via LoRA when use_lora=True).
+        use_lora: Whether to use LoRA adapters (only applies when finetune_llm=True).
         lora_r: LoRA rank.
         lora_alpha: LoRA alpha scaling.
 
@@ -31,7 +34,7 @@ def get_llm(
         torch_dtype=torch.float32,
     )
 
-    if use_lora:
+    if finetune_llm and use_lora:
         lora_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
             r=lora_r,
@@ -40,5 +43,15 @@ def get_llm(
             target_modules=["q_proj", "v_proj"],
         )
         model = get_peft_model(model, lora_config)
+    elif finetune_llm and not use_lora:
+        warnings.warn(
+            f"Full fine-tuning of LLM '{model_name}' — all weights are "
+            "trainable. This is memory-intensive and increases FL communication "
+            "cost. Consider use_lora=True for parameter-efficient training.",
+            stacklevel=2,
+        )
+    elif not finetune_llm:
+        for param in model.parameters():
+            param.requires_grad = False
 
     return tokenizer, model

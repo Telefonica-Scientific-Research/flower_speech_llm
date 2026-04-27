@@ -106,7 +106,7 @@ The original app did **not** include the `model/` subpackage. This repo provides
 | **W&B integration** | Per-client logging grouped by experiment |
 | **Tensor Core optimization** | `float32_matmul_precision("medium")` for Ampere+ GPUs |
 | **HPC containers** | Singularity `.def` + Dockerfile + SLURM script in `deploy/` |
-| **YAML configs** | Standalone experiment configs in `configs/` for FL (A1/B1/B2/Voxtral) and centralized training |
+| **YAML configs** | Standalone experiment configs in `configs/` for FL (A1/B1/B2/Voxtral) and centralized training (speech-llm, Voxtral) |
 | **Adapter checkpoint callback** | `AdapterCheckpoint` saves lightweight adapter-only `.pt` files at every validation step during centralized training |
 
 ### New Scripts
@@ -116,7 +116,8 @@ The original app did **not** include the `model/` subpackage. This repo provides
 | `prepare_mls_fl.py` | Download MLS (8 languages), save audio as FLAC, create per-speaker CSVs |
 | `create_experiment_partitions.py` | Generate IID and speaker-based FL partitions using `flwr-datasets` |
 | `evaluate_fl_model.py` | Evaluate checkpoints on MLS test sets (supports both model types) |
-| `train_centralized.py` | Centralized (non-federated) training baseline for comparison |
+| `train_centralized.py` | Centralized training baseline for speech-llm |
+| `train_centralized_voxtral.py` | Centralized training baseline for Voxtral |
 | `run_experiments.sh` | Run A1/B1/B2 experiments sequentially |
 
 ---
@@ -132,7 +133,8 @@ The original app did **not** include the `model/` subpackage. This repo provides
 | `dataset.py` | CSV-based audio dataset for speech-llm (multi-task JSON output); `MyCollator` with padded batching |
 | `dataset_voxtral.py` | CSV-based audio dataset for Voxtral (language-tagged transcription) |
 | `model/` | Encoder (with attention_mask support), connector, LLM, and Voxtral model loaders |
-| `train_centralized.py` | Centralized training baseline (pools all client data) |
+| `train_centralized.py` | Centralized training baseline — speech-llm (pools all client data) |
+| `train_centralized_voxtral.py` | Centralized training baseline — Voxtral (pools all client data) |
 | `evaluate_fl_model.py` | Checkpoint evaluation (both model types) |
 
 ### Federated Learning Process
@@ -246,6 +248,8 @@ flwr run . --run-config 'csv-train-dir="/path/to/fl_A1_mixed_316" csv-dev-dir="/
 
 Train the same model architecture without federation for comparison. All client data is pooled into a single centralized dataset.
 
+**Speech-LLM (WavLM + TinyLlama):**
+
 ```bash
 # Default — FL-comparable training budget (20 epochs ≈ 40 FL rounds):
 python -m flower_speech_llm.train_centralized
@@ -273,9 +277,22 @@ python -m flower_speech_llm.train_centralized \
     --csv-dev-dir /path/to/fl_MLS_dev_speaker
 ```
 
-The centralized script uses identical model config, optimizer, gradient clipping, and LoRA settings as the FL experiments. Default 20 epochs over ~1.7M pooled samples ≈ 34M sample exposures, comparable to 40 FL rounds × 95 clients × 2000 batches × batch_size 8 ≈ 60M.
+**Voxtral (end-to-end):**
 
-Run `python -m flower_speech_llm.train_centralized --help` for all options.
+```bash
+# Multi-GPU (4x GPUs):
+python -m flower_speech_llm.train_centralized_voxtral \
+    --config configs/centralized_voxtral.yaml
+
+# Resume from checkpoint:
+python -m flower_speech_llm.train_centralized_voxtral \
+    --config configs/centralized_voxtral.yaml \
+    --pretrained-checkpoint centralized_checkpoints_voxtral/adapter-epoch01-step50000-wer0.1500.pt
+```
+
+Both centralized scripts use identical model config, optimizer, gradient clipping, and LoRA settings as the FL experiments. Default 20 epochs over ~1.7M pooled samples ≈ 34M sample exposures, comparable to 40 FL rounds × 95 clients × 2000 batches × batch_size 8 ≈ 60M.
+
+Run `python -m flower_speech_llm.train_centralized --help` or `python -m flower_speech_llm.train_centralized_voxtral --help` for all options.
 
 ### Override Settings
 
@@ -334,10 +351,11 @@ model-type = "speech-llm"     # "speech-llm" or "voxtral"
 audio-encoder-name = "microsoft/wavlm-large"
 llm-name           = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 connector-name     = "linear"       # "linear", "linear-pool", or "cnn"
+finetune-encoder   = false
+finetune-llm       = true
 use-lora           = true
 lora-r             = 8
 lora-alpha         = 16
-finetune-encoder   = false
 ```
 
 ### Voxtral Config
@@ -346,8 +364,26 @@ finetune-encoder   = false
 voxtral-model-name = "mistralai/Voxtral-Mini-3B-2507"
 data-language      = "en"           # Default language for prompts
 model-cache-dir    = ""             # HuggingFace cache directory
-# lora-r, lora-alpha, use-lora, finetune-encoder are shared
+# lora-r, lora-alpha, use-lora, finetune-encoder, finetune-llm are shared
 ```
+
+### Fine-Tuning Control
+
+Three flags control which components are trainable. The connector is **always trainable**.
+
+| `finetune-encoder` | `finetune-llm` | `use-lora` | Encoder | Connector | LLM |
+|---|---|---|---|---|---|
+| `false` | `true` | `true` | Frozen | Trainable | **LoRA** |
+| `false` | `true` | `false` | Frozen | Trainable | Full unfreeze ⚠️ |
+| `false` | `false` | `*` | Frozen | Trainable | Frozen |
+| `true` | `true` | `true` | **LoRA** | Trainable | **LoRA** |
+| `true` | `true` | `false` | Full unfreeze ⚠️ | Trainable | Full unfreeze ⚠️ |
+| `true` | `false` | `true` | **LoRA** | Trainable | Frozen |
+| `true` | `false` | `false` | Full unfreeze ⚠️ | Trainable | Frozen |
+
+⚠️ Full unfreeze makes all weights trainable — very memory-intensive and increases FL communication cost. A warning is emitted at model construction time.
+
+> **Default** (`finetune-encoder=false, finetune-llm=true, use-lora=true`): only LoRA adapters on the LLM + the connector are trained — the most parameter-efficient setting.
 
 ### Federation
 
@@ -433,7 +469,8 @@ flower_speech_llm/
 │   │   ├── connector.py                # Linear / LinearPool / CNN connectors
 │   │   ├── llm.py                      # LLM + LoRA loader
 │   │   └── voxtral.py                  # Voxtral model loader + LoRA
-│   ├── train_centralized.py             # Centralized training baseline
+│   ├── train_centralized.py             # Centralized training — speech-llm
+│   ├── train_centralized_voxtral.py    # Centralized training — Voxtral
 │   ├── prepare_mls_fl.py               # MLS dataset download + preparation
 │   ├── create_experiment_partitions.py  # FL partition generator
 │   └── run_experiments.sh              # Batch experiment runner
@@ -442,7 +479,8 @@ flower_speech_llm/
 │   ├── fl_B1_speaker_fedavg.yaml       # FL: Non-IID speaker + FedAvg
 │   ├── fl_B2_speaker_fedprox.yaml      # FL: Non-IID speaker + FedProx
 │   ├── fl_voxtral.yaml                 # FL: Voxtral end-to-end
-│   ├── centralized.yaml                # Centralized training (full)
+│   ├── centralized.yaml                # Centralized training — speech-llm
+│   ├── centralized_voxtral.yaml        # Centralized training — Voxtral
 │   └── centralized_quick_test.yaml     # Centralized training (smoke test)
 ├── deploy/
 │   ├── flower_speech_llm.def           # Singularity definition
