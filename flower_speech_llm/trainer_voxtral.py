@@ -64,12 +64,13 @@ class VoxtralLightning(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         outputs = self.model(**batch)
         loss = outputs.loss
-        self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        self.log("val/loss", loss.detach(), on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
         # Compute WER on greedy argmax (no beam search in validation)
         logits = outputs.logits
         labels = batch["labels"]
         predicted_ids = torch.argmax(logits, dim=-1).cpu()
+        del outputs, logits  # free GPU memory
 
         # Decode only the label portion (where labels != -100)
         for i in range(labels.size(0)):
@@ -84,8 +85,6 @@ class VoxtralLightning(pl.LightningModule):
             if target_text:
                 wer_val = compute_wer(target_text.lower(), pred_text.lower())
                 self.log("val/wer", wer_val, on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
-
-        return {"val_loss": loss}
 
     def test_step(self, batch, batch_idx):
         return self.validation_step(batch, batch_idx)
