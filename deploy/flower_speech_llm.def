@@ -1,62 +1,117 @@
 Bootstrap: docker
-From: pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel
+From: nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04
 
 %labels
     Author Telefonica-Scientific-Research
-    Version 1.0.1
+    Version 1.0.2
     Description Flower Speech-LLM federated learning (offline HPC image)
 
 %files
-    # Copy the flower_speech_llm package into the image
-    # Run from the repo root: singularity build flower_speech_llm.sif deploy/flower_speech_llm.def
-    . /opt/flower_speech_llm_repo
+    # No local files needed — repo is cloned during %post
 
 %environment
     export HF_HOME=/opt/hf_cache
+    export HF_HUB_CACHE=/gpfs/scratch/ehpc628/models
     export TRANSFORMERS_CACHE=/opt/hf_cache
     export HF_HUB_OFFLINE=1
     export TRANSFORMERS_OFFLINE=1
     export WANDB_MODE=offline
+    export NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    export NVIDIA_VISIBLE_DEVICES=all
     export PATH=/opt/venv/bin:$PATH
 
 %post
+    export DEBIAN_FRONTEND=noninteractive
+
     # ----------------------------------------------------------------
-    # System dependencies
+    # System dependencies (matching FedScope pattern)
     # ----------------------------------------------------------------
     apt-get update && apt-get install -y --no-install-recommends \
-        git \
+        software-properties-common \
         curl \
         build-essential \
+        gcc \
+        dirmngr \
+        ca-certificates \
+        git \
+        vim \
+        pdsh \
+        python3-socks \
         libsndfile1 \
         ffmpeg \
         sox \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
     # ----------------------------------------------------------------
-    # Python virtual environment via uv
+    # Python 3.12 from deadsnakes (container-local, not from host)
+    # ----------------------------------------------------------------
+    add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3.12 \
+        python3.12-dev \
+        python3.12-venv \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
+    && update-alternatives --install /usr/bin/python  python  /usr/bin/python3.12 1 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+    # Verify Python is container-local
+    python3.12 --version
+    which python3.12
+
+    # ----------------------------------------------------------------
+    # /gpfs network file system from HPC
+    # ----------------------------------------------------------------
+    mkdir -p /gpfs/projects
+    mkdir -p /gpfs/scratch
+
+    # ----------------------------------------------------------------
+    # uv package manager
     # ----------------------------------------------------------------
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH=/root/.local/bin:$PATH
 
-    uv venv /opt/venv --python 3.12
+    # ----------------------------------------------------------------
+    # Python venv — pin to container-local /usr/bin/python3.12
+    # (avoids uv resolving a host-only Python path)
+    # ----------------------------------------------------------------
+    uv venv /opt/venv --python /usr/bin/python3.12
     . /opt/venv/bin/activate
+
+    # ----------------------------------------------------------------
+    # Clone flower_speech_llm repo
+    # ----------------------------------------------------------------
+    cd /opt && git clone https://github.com/Telefonica-Scientific-Research/flower_speech_llm.git flower_speech_llm_repo
 
     # ----------------------------------------------------------------
     # Install flower_speech_llm + all dependencies
     # ----------------------------------------------------------------
     cd /opt/flower_speech_llm_repo
+    uv pip install torch==2.5.1 torchaudio==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
     uv pip install -e .
 
-    # Additional runtime deps (not in pyproject.toml but useful)
+    # Additional runtime deps
     uv pip install soundfile librosa
+    # Networking (proxy/socks support inside HPC)
+    uv pip install pysocks "httpx[socks]"
+
+    # ----------------------------------------------------------------
+    # Patch CVE-2025-32434 torch version check in transformers
+    # cu121 only has torch<=2.5.1; all HF models use safetensors
+    # format so the torch.load vulnerability does not apply.
+    # ----------------------------------------------------------------
+    IMPORT_UTILS=$(python -c "import transformers.utils.import_utils; print(transformers.utils.import_utils.__file__)")
+    sed -i '/def check_torch_load_is_safe/a\    return  # Patched: cu121 torch 2.5.1, models use safetensors' "$IMPORT_UTILS"
 
     # ----------------------------------------------------------------
     # Pre-download all HuggingFace models into the image
-    # (HPC nodes have NO internet access)
+    # (HPC compute nodes have NO internet access)
     # ----------------------------------------------------------------
     export HF_HOME=/opt/hf_cache
     export TRANSFORMERS_CACHE=/opt/hf_cache
     mkdir -p /opt/hf_cache
+    mkdir -p /gpfs/scratch
+    mkdir -p /gpfs/projects
 
     python -c "
 from transformers import AutoModel, AutoFeatureExtractor, AutoTokenizer, AutoModelForCausalLM
@@ -84,16 +139,17 @@ print('=== All models downloaded successfully ===')
     # Verify installations
     # ----------------------------------------------------------------
     echo "=== Verification ==="
+    python -c "import sys; print(f'Python: {sys.executable} ({sys.version})')"
     python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.version.cuda}')"
     python -c "import torchaudio; print(f'TorchAudio: {torchaudio.__version__}')"
     python -c "import flwr; print(f'Flower: {flwr.__version__}')"
     python -c "import pytorch_lightning; print(f'PyTorch Lightning: {pytorch_lightning.__version__}')"
     python -c "import transformers; print(f'Transformers: {transformers.__version__}')"
     python -c "import peft; print(f'PEFT: {peft.__version__}')"
+    python -c "import socks; print('pysocks OK')"
     python -c "from flower_speech_llm.trainer import SpeechLLMLightning; print('speech-llm import OK')"
     python -c "from flower_speech_llm.model.voxtral import get_voxtral; print('voxtral import OK')"
 
-    # Show model cache size
     du -sh /opt/hf_cache
     echo "=== Build complete ==="
 
