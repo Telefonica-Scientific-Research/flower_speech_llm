@@ -1,0 +1,68 @@
+# ==============================================================================
+# Centralized Training: SpeechLLM — Multi-GPU (4x GPUs)
+#
+# Pools all client data into a single dataset and trains with PyTorch Lightning.
+# Uses DDP across 4 GPUs for ~3.5x speedup. Higher LoRA rank for more capacity.
+#
+# The LR scheduler in trainer.py is already warmup + cosine annealing:
+#   - Linear warmup for warmup-steps
+#   - Cosine decay from max-lr → 0 over total-training-step
+#
+# Usage:
+#   python -m flower_speech_llm.train_centralized --config configs/centralized_multiGPU.yaml
+#
+#   # Resume from checkpoint:
+#   python -m flower_speech_llm.train_centralized --config configs/centralized_multiGPU.yaml \
+#       --pretrained-checkpoint centralized_checkpoints/adapter-epoch01-step188844-wer0.2700.pt
+# ==============================================================================
+
+# ---- Model ----
+audio-enc-dim:       1024
+llm-dim:             2048
+audio-encoder-name:  microsoft/wavlm-large
+connector-name:      linear
+llm-name:            TinyLlama/TinyLlama-1.1B-Chat-v1.0
+finetune-encoder:    false
+finetune-llm:        true
+connector-k:         2
+
+# ---- LoRA (increased rank for more capacity) ----
+use-lora:            true
+lora-r:              16
+lora-alpha:          32
+
+# ---- Optimizer (warmup + cosine annealing in trainer.py) ----
+max-lr:              0.0002       # scaled ~2x for 4x GPUs (linear scaling rule)
+total-training-step: 2000000
+warmup-steps:        1000
+
+# ---- Multi-GPU Training ----
+max-epochs:            20
+devices:               4           # use 4 GPUs
+strategy:              ddp         # DistributedDataParallel
+precision:             bf16-mixed  # bfloat16 for Ampere+ GPUs
+train-batch-size:      8           # per GPU → 8×4 = 32 effective before accum
+grad-accumulate-steps: 2           # effective batch = 32×2 = 64 total
+gradient-clip-val:     1.0
+limit-train-batches:   null        # null = full dataset
+limit-val-batches:     200
+num-workers:           8           # per DataLoader
+val-check-interval:    0.25
+
+# ---- Data ----
+csv-train-dir:  flower_speech_llm/fl_A1_mixed_316
+csv-dev-dir:    flower_speech_llm/fl_MLS_dev_speaker
+csv-test-dir:   flower_speech_llm/fl_MLS_test
+
+# ---- Checkpoint / Resume ----
+pretrained-checkpoint: ""
+output-dir:            centralized_checkpoints_multiPGU
+
+# ---- Hardware ----
+devices:     auto
+strategy:    auto
+precision:   bf16-mixed
+
+# ---- Logging ----
+wandb-project: ""
+run-name:      centralized-speech-llm-multiPGU

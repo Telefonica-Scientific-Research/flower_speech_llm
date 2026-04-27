@@ -1,0 +1,62 @@
+# ==============================================================================
+# FL Experiment A1-Q4: Multilingual-mixed IID + FedAvg (Whisper-turbo + Qwen3-4B)
+#
+# Qwen3-4B achieves Qwen2.5-72B-class quality in 4B params.
+# ==============================================================================
+
+# ---- Model ----
+model-type:          speech-llm
+audio-enc-dim:       1280          # Whisper large-v3-turbo encoder dim
+llm-dim:             2560          # Qwen3-4B hidden size
+audio-encoder-name:  openai/whisper-large-v3-turbo
+connector-name:      linear
+llm-name:            Qwen/Qwen3-4B-Instruct-2507
+finetune-encoder:    false
+finetune-llm:        true
+connector-k:         2
+
+# ---- LoRA ----
+use-lora:            true
+lora-r:              8
+lora-alpha:          16
+
+# ---- Federation ----
+num-server-rounds:   40
+fraction-fit:        0.3
+fraction-evaluate:   0.0
+min-fit-clients:     2
+min-evaluate-clients: 2
+
+# ---- Client Training ----
+local-epochs:          10
+train-batch-size:      4
+train-batch-per-epoch: 200
+grad-accumulate-steps: 4         # effective batch = 16
+num-workers:           3
+
+# ---- Optimizer ----
+max-lr:              0.0001
+total-training-step: 2000
+warmup-steps:        50
+
+# ---- LR Decay ----
+lr-decay-factor:     0.9
+lr-decay-every:      10
+
+# ---- FedProx ----
+fedprox-mu:          0.0
+
+# ---- Data ----
+csv-train-dir:  flower_speech_llm/fl_A1_mixed_316
+csv-dev-dir:    flower_speech_llm/fl_MLS_dev_speaker
+csv-test-dir:   flower_speech_llm/fl_MLS_test
+
+# ---- Checkpoints ----
+checkpoint-dir:        FL_checkpoints_A1_qwen3_4b
+checkpoint-offset:     0
+pretrained-checkpoint: ""
+
+# ---- Simulation (prefixed with _ to exclude from --run-config) ----
+_num-supernodes:        316
+_client-num-cpus:       4
+_client-num-gpus:       1.0

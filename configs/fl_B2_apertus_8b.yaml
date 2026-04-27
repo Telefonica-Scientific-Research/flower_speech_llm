@@ -1,0 +1,63 @@
+# ==============================================================================
+# FL Experiment B2-AP8: One-speaker non-IID + FedProx (Whisper-turbo + Apertus-8B)
+#
+# Apertus-8B: 1811 languages, fully open, EU AI Act compliant, Apache 2.0.
+# FedProx mu=0.01 to mitigate non-IID divergence.
+# ==============================================================================
+
+# ---- Model ----
+model-type:          speech-llm
+audio-enc-dim:       1280          # Whisper large-v3-turbo encoder dim
+llm-dim:             4096          # Apertus-8B hidden size
+audio-encoder-name:  openai/whisper-large-v3-turbo
+connector-name:      linear
+llm-name:            swiss-ai/Apertus-8B-Instruct-2509
+finetune-encoder:    false
+finetune-llm:        true
+connector-k:         2
+
+# ---- LoRA ----
+use-lora:            true
+lora-r:              8
+lora-alpha:          16
+
+# ---- Federation ----
+num-server-rounds:   40
+fraction-fit:        0.3
+fraction-evaluate:   0.0
+min-fit-clients:     2
+min-evaluate-clients: 2
+
+# ---- Client Training ----
+local-epochs:          10
+train-batch-size:      4          # smaller batch — 8B model
+train-batch-per-epoch: 200
+grad-accumulate-steps: 4         # effective batch = 16
+num-workers:           3
+
+# ---- Optimizer ----
+max-lr:              0.0001
+total-training-step: 2000
+warmup-steps:        50
+
+# ---- LR Decay ----
+lr-decay-factor:     0.9
+lr-decay-every:      10
+
+# ---- FedProx ----
+fedprox-mu:          0.01
+
+# ---- Data ----
+csv-train-dir:  flower_speech_llm/fl_B1_speaker_316
+csv-dev-dir:    flower_speech_llm/fl_MLS_dev_speaker
+csv-test-dir:   flower_speech_llm/fl_MLS_test
+
+# ---- Checkpoints ----
+checkpoint-dir:        FL_checkpoints_B2_apertus_8b
+checkpoint-offset:     0
+pretrained-checkpoint: ""
+
+# ---- Simulation (prefixed with _ to exclude from --run-config) ----
+_num-supernodes:        316
+_client-num-cpus:       4
+_client-num-gpus:       1.0

@@ -1,0 +1,59 @@
+# ==============================================================================
+# FL Voxtral B2: One-speaker non-IID + FedProx with Voxtral Mini 3B
+#
+# Same data partitioning as B1 (one speaker per client), but uses FedProx
+# with mu=0.01 to mitigate non-IID divergence.
+# ==============================================================================
+
+# ---- Model ----
+model-type:          voxtral
+voxtral-model-name:  mistralai/Voxtral-Mini-3B-2507
+model-cache-dir:     ""
+data-language:       en
+
+# ---- LoRA ----
+use-lora:            true
+lora-r:              8
+lora-alpha:          16
+finetune-encoder:    false
+
+# ---- Federation ----
+num-server-rounds:   40
+fraction-fit:        0.3
+fraction-evaluate:   0.0
+min-fit-clients:     2
+min-evaluate-clients: 2
+
+# ---- Client Training ----
+local-epochs:          10
+train-batch-size:      4
+train-batch-per-epoch: 200
+grad-accumulate-steps: 4
+num-workers:           3
+
+# ---- Optimizer ----
+max-lr:              0.0001
+total-training-step: 2000
+warmup-steps:        50
+
+# ---- LR Decay ----
+lr-decay-factor:     0.9
+lr-decay-every:      10
+
+# ---- FedProx ----
+fedprox-mu:          0.01
+
+# ---- Data ----
+csv-train-dir:  flower_speech_llm/fl_B1_speaker_316
+csv-dev-dir:    flower_speech_llm/fl_MLS_dev_speaker
+csv-test-dir:   flower_speech_llm/fl_MLS_test
+
+# ---- Checkpoints ----
+checkpoint-dir:        FL_checkpoints_B2_voxtral
+checkpoint-offset:     0
+pretrained-checkpoint: ""
+
+# ---- Simulation (prefixed with _ to exclude from --run-config) ----
+_num-supernodes:        316
+_client-num-cpus:       4
+_client-num-gpus:       1.0

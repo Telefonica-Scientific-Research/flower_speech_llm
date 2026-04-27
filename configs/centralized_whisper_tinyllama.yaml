@@ -1,0 +1,58 @@
+# ==============================================================================
+# Centralized Training: Whisper-turbo + TinyLlama
+#
+# Replaces WavLM with Whisper large-v3-turbo as the audio encoder.
+# Pools all client data into a single dataset.
+#
+# Usage:
+#   python -m flower_speech_llm.train_centralized \
+#       --config configs/centralized_whisper_tinyllama.yaml
+# ==============================================================================
+
+# ---- Model ----
+audio-enc-dim:       1280          # Whisper large-v3-turbo encoder dim
+llm-dim:             2048
+audio-encoder-name:  openai/whisper-large-v3-turbo
+connector-name:      linear
+llm-name:            TinyLlama/TinyLlama-1.1B-Chat-v1.0
+finetune-encoder:    false
+finetune-llm:        true
+connector-k:         2
+
+# ---- LoRA ----
+use-lora:            true
+lora-r:              8
+lora-alpha:          16
+
+# ---- Optimizer ----
+max-lr:              0.0001
+total-training-step: 2000000
+warmup-steps:        1000
+
+# ---- Training ----
+max-epochs:            20
+train-batch-size:      8
+grad-accumulate-steps: 2
+gradient-clip-val:     1.0
+limit-train-batches:   null
+limit-val-batches:     200
+num-workers:           8
+val-check-interval:    0.25
+
+# ---- Data ----
+csv-train-dir:  flower_speech_llm/fl_A1_mixed_316
+csv-dev-dir:    flower_speech_llm/fl_MLS_dev_speaker
+csv-test-dir:   flower_speech_llm/fl_MLS_test
+
+# ---- Checkpoint / Resume ----
+pretrained-checkpoint: ""
+output-dir:            centralized_checkpoints_whisper_tinyllama
+
+# ---- Hardware ----
+devices:     auto
+strategy:    auto
+precision:   bf16-mixed
+
+# ---- Logging ----
+wandb-project: ""
+run-name:      centralized-whisper-tinyllama
