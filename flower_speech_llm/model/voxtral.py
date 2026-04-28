@@ -7,8 +7,25 @@ Supports three training modes controlled by config flags:
 """
 
 import torch
+from huggingface_hub import snapshot_download
 from transformers import VoxtralForConditionalGeneration, VoxtralProcessor
 from peft import LoraConfig, get_peft_model
+
+
+def _resolve_local_model_path(model_name: str, cache_dir: str = "") -> str:
+    """Resolve the local snapshot path for a HuggingFace model.
+
+    Uses snapshot_download with local_files_only=True to find the cached
+    model directory without any network access.  Falls back to the original
+    model_name (works when online).
+    """
+    dl_kwargs = {}
+    if cache_dir:
+        dl_kwargs["cache_dir"] = cache_dir
+    try:
+        return snapshot_download(model_name, local_files_only=True, **dl_kwargs)
+    except Exception:
+        return model_name
 
 
 def get_voxtral(
@@ -42,11 +59,15 @@ def get_voxtral(
     if cache_dir:
         kwargs["cache_dir"] = cache_dir
 
+    # Resolve to local snapshot path so mistral_common's tokenizer loader
+    # doesn't try to hit the HF API (fails on offline HPC compute nodes).
+    local_path = _resolve_local_model_path(model_name, cache_dir)
+
     # Load model in bfloat16 for memory efficiency
     model = VoxtralForConditionalGeneration.from_pretrained(
-        model_name, torch_dtype=torch.bfloat16, **kwargs
+        local_path, torch_dtype=torch.bfloat16, **kwargs
     )
-    processor = VoxtralProcessor.from_pretrained(model_name, **kwargs)
+    processor = VoxtralProcessor.from_pretrained(local_path, **kwargs)
 
     # Step 1: Freeze everything
     for p in model.parameters():
