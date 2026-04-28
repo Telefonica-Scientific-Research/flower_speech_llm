@@ -8,6 +8,7 @@ from collections import OrderedDict
 import numpy as np
 import torch
 from flwr.app import ArrayRecord, Context
+from flwr.common import MetricRecord
 from flwr.common.record import ConfigRecord
 from flwr.serverapp import Grid, ServerApp
 from flwr.serverapp.strategy import FedAvg
@@ -101,25 +102,42 @@ class SpeechLLMFedAvg(FedAvg):
         config["local-epochs"] = self.local_epochs
         return super().configure_train(server_round, arrays, config, grid)
 
-    def on_aggregate(self, server_round: int, aggregated_arrays: list) -> None:
-        """Save a checkpoint after each aggregation round."""
+    def aggregate_train(self, server_round, replies):
+        """Aggregate training results and save a checkpoint."""
+        arrays, metrics = super().aggregate_train(server_round, replies)
+
+        # Save checkpoint if aggregation succeeded
+        if arrays is not None:
+            self._save_checkpoint(server_round, arrays)
+
+        return arrays, metrics
+
+    def _save_checkpoint(self, server_round: int, arrays: ArrayRecord) -> None:
+        """Save aggregated trainable params as a checkpoint."""
         model = load_model_from_config(self.model_cfg)
         trainable_names = [n for n, p in model.named_parameters() if p.requires_grad]
 
-        if len(aggregated_arrays) != len(trainable_names):
+        # Convert ArrayRecord to list of numpy arrays
+        agg_arrays = list(arrays.values())
+
+        if len(agg_arrays) != len(trainable_names):
             print(
                 f"[Round {server_round}] ⚠️  Mismatch: "
-                f"{len(aggregated_arrays)} aggregated tensors vs {len(trainable_names)} trainable params."
+                f"{len(agg_arrays)} aggregated tensors vs {len(trainable_names)} trainable params."
             )
+            del model
+            gc.collect()
             return
 
         state_dict = OrderedDict(
-            {k: torch.tensor(np.array(v)) for k, v in zip(trainable_names, aggregated_arrays)}
+            {k: torch.tensor(np.array(v)) for k, v in zip(trainable_names, agg_arrays)}
         )
         try:
             model.load_state_dict(state_dict, strict=False)
         except RuntimeError as e:
             print(f"[Round {server_round}] ❌ Error loading state_dict: {e}")
+            del model, state_dict
+            gc.collect()
             return
 
         round_id = server_round + self.checkpoint_offset
@@ -179,11 +197,19 @@ def main(grid: Grid, context: Context) -> None:
     )
 
     # ---- Run federation ----
-    print(f"\n🚀 Starting Federated Learning — {num_rounds} rounds, {int(1/fraction_fit):.0f}x sampling ratio\n")
+    # Timeout per round: how long grid.send_and_receive() waits for client replies.
+    # Default is 3600s (1h). With many clients processed sequentially per GPU,
+    # rounds can exceed 1h → replies arrive after timeout → TTL errors.
+    # Set generously: 4h per round should cover even slow rounds.
+    round_timeout = float(cfg.get("round-timeout", 14400))
+    print(f"\n🚀 Starting Federated Learning — {num_rounds} rounds, "
+          f"{int(1/fraction_fit):.0f}x sampling ratio, "
+          f"round timeout {round_timeout}s\n")
     result = strategy.start(
         grid=grid,
         initial_arrays=initial_arrays,
         num_rounds=num_rounds,
+        timeout=round_timeout,
     )
 
     # ---- Save final model ----
