@@ -62,8 +62,9 @@ export TORCH_EXTENSIONS_DIR=$TORCH_EXT_DIR
 export DS_BUILD_OPS=0
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 export PYTHONUNBUFFERED=1
-# Prevent Lightning from auto-detecting SLURM (ntasks-per-node=1 vs devices=4 conflict)
-export SLURM_NTASKS_PER_NODE=4
+# Unset SLURM env vars so Lightning uses its own DDP subprocess spawning
+# instead of expecting srun-managed processes (ntasks=1 vs devices=4 conflict)
+for v in \$(env | grep ^SLURM_ | cut -d= -f1); do unset \$v; done
 # CUDA optimizations for H100
 # export CUDA_DEVICE_MAX_CONNECTIONS=1
 # export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512

@@ -42,6 +42,12 @@ limit-val-batches:     200
 num-workers:           8
 val-check-interval:    0.25
 
+# ---- Hardware ----
+devices:     auto
+strategy:    auto
+precision:   bf16-mixed
+
+
 # ---- Data ----
 csv-train-dir:  flower_speech_llm/fl_A1_mixed_316
 csv-dev-dir:    flower_speech_llm/fl_MLS_dev_speaker

@@ -20,7 +20,9 @@ Usage:
 
 import argparse
 import os
+import shutil
 import sys
+from datetime import datetime
 
 import yaml
 import torch
@@ -32,6 +34,32 @@ from torch.utils.data import ConcatDataset, DataLoader
 from .model.voxtral import get_voxtral
 from .trainer_voxtral import VoxtralLightning
 from .dataset_voxtral import VoxtralCSVDataset, VoxtralCollator
+
+
+def _build_run_dir(args):
+    """Create a unique run sub-directory under args.output_dir.
+
+    Layout: <output-dir>/<model>_lr<r>a<alpha>_enc<0|1>_llm<0|1>_bs<B>x<A>_<YYYYMMDD_HHMMSS>/
+    Copies the config YAML into the run directory for reproducibility.
+    """
+    model_short = args.voxtral_model_name.split("/")[-1].lower()
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tag = (
+        f"{model_short}"
+        f"_lr{args.lora_r}a{args.lora_alpha}"
+        f"_enc{int(args.finetune_encoder)}_llm{int(args.finetune_llm)}"
+        f"_bs{args.train_batch_size}x{args.grad_accumulate_steps}"
+        f"_{ts}"
+    )
+    run_dir = os.path.join(args.output_dir, tag)
+    os.makedirs(run_dir, exist_ok=True)
+
+    # Copy config YAML for reproducibility
+    if args.config and os.path.exists(args.config):
+        shutil.copy2(args.config, os.path.join(run_dir, os.path.basename(args.config)))
+
+    args.output_dir = run_dir
+    return run_dir
 
 
 class LogProgressBar(TQDMProgressBar):
@@ -142,6 +170,8 @@ def parse_args():
     # ---- Logging ----
     p.add_argument("--wandb-project", default="")
     p.add_argument("--run-name", default="centralized-voxtral")
+    p.add_argument("--log-every-n-steps", type=int, default=50,
+                   help="Print progress bar every N batches (default: 50)")
 
     # ---- Two-pass parse: load YAML defaults, then let CLI override ----
     preliminary, _ = p.parse_known_args()
@@ -186,6 +216,9 @@ def main():
     args = parse_args()
 
     torch.set_float32_matmul_precision("medium")
+
+    # ---- Create unique run directory ----
+    run_dir = _build_run_dir(args)
 
     # ---- Build model ----
     print("=" * 70)
@@ -270,7 +303,7 @@ def main():
         ),
         AdapterCheckpoint(output_dir=args.output_dir),
         LearningRateMonitor(logging_interval="step"),
-        LogProgressBar(refresh_rate=50),
+        LogProgressBar(refresh_rate=args.log_every_n_steps),
     ]
 
     # ---- Logger ----
