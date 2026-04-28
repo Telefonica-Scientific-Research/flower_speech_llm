@@ -73,9 +73,10 @@ class VoxtralLightning(pl.LightningModule):
         del outputs, logits  # free GPU memory
 
         # Decode only the label portion (where labels != -100)
+        labels = labels.cpu()
         for i in range(labels.size(0)):
             label_mask = labels[i] != -100
-            target_ids = labels[i][label_mask].cpu()
+            target_ids = labels[i][label_mask]
             # Align predicted to same positions
             pred_ids = predicted_ids[i][label_mask]
 
