@@ -15,6 +15,7 @@ data-language:       en
 use-lora:            true
 lora-r:              8
 lora-alpha:          16
+finetune-llm:        true
 finetune-encoder:    false
 
 # ---- Federation ----

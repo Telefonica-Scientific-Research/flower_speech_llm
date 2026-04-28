@@ -86,6 +86,7 @@ def build_model(context: Context):
             use_lora=bool(cfg.get("use-lora", True)),
             lora_r=int(cfg.get("lora-r", 8)),
             lora_alpha=int(cfg.get("lora-alpha", 32)),
+            finetune_llm=bool(cfg.get("finetune-llm", True)),
             finetune_encoder=bool(cfg.get("finetune-encoder", False)),
             cache_dir=cfg.get("model-cache-dir", ""),
         )

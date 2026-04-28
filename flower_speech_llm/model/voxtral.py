@@ -1,9 +1,14 @@
 """Voxtral model loader with LoRA fine-tuning for Flower FL.
 
-Supports three training modes controlled by config flags:
-  - connector (multi_modal_projector): always fully trainable
-  - LLM (language_model): LoRA on Q/K/V/O projections
-  - audio encoder (audio_tower): frozen by default, LoRA when finetune_encoder=True
+Supports four training modes via independent finetune_llm / finetune_encoder flags
+(connector is always fully trainable):
+
+  finetune_llm  finetune_encoder  Mode
+  ──────────────────────────────────────────
+  False         False             Connector only
+  True          False             LLM + Connector
+  False         True              Encoder + Connector
+  True          True              Full (LLM + Encoder + Connector)
 """
 
 import torch
@@ -33,23 +38,23 @@ def get_voxtral(
     use_lora: bool = True,
     lora_r: int = 8,
     lora_alpha: int = 32,
+    finetune_llm: bool = True,
     finetune_encoder: bool = False,
     cache_dir: str = "",
 ):
     """Load Voxtral with optional LoRA adapters.
 
-    Training targets:
-      1. multi_modal_projector — fully trainable (no LoRA, all weights exchanged in FL)
-      2. language_model — LoRA on attention projections
-      3. audio_tower — frozen by default; LoRA on attention projections when
-         finetune_encoder=True
+    Training targets (connector is always fully trainable):
+      - language_model:  LoRA on Q/K/V/O when finetune_llm=True
+      - audio_tower:     LoRA on Q/K/V/out when finetune_encoder=True
 
     Args:
         model_name: HuggingFace model ID.
-        use_lora: Whether to apply LoRA adapters on the language model.
+        use_lora: Whether to apply LoRA adapters.
         lora_r: LoRA rank.
         lora_alpha: LoRA alpha scaling.
-        finetune_encoder: If True, also apply LoRA to the audio_tower.
+        finetune_llm: If True, apply LoRA to language_model attention.
+        finetune_encoder: If True, apply LoRA to audio_tower attention.
         cache_dir: Optional HF cache directory.
 
     Returns:
@@ -78,19 +83,31 @@ def get_voxtral(
         p.requires_grad = True
 
     # Step 3: Apply LoRA
-    if use_lora:
-        # Build target_modules based on what we want to LoRA-train
-        target_modules = ["language_model.*q_proj", "language_model.*k_proj",
-                          "language_model.*v_proj", "language_model.*o_proj"]
-        if finetune_encoder:
-            target_modules += ["audio_tower.*q_proj", "audio_tower.*k_proj",
-                               "audio_tower.*v_proj", "audio_tower.*o_proj"]
+    if use_lora and (finetune_llm or finetune_encoder):
+        # LLM attention: q_proj, k_proj, v_proj, o_proj
+        # Audio encoder attention: q_proj, k_proj, v_proj, out_proj (note: out_proj, not o_proj)
+        target_modules = []
+        exclude_modules = None
+
+        if finetune_llm and finetune_encoder:
+            # Full: LoRA on both LLM + encoder
+            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "out_proj"]
+        elif finetune_llm:
+            # LLM only: exclude audio_tower via regex (PEFT uses re.fullmatch
+            # when exclude_modules is a string)
+            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
+            exclude_modules = r"audio_tower\..*"
+        elif finetune_encoder:
+            # Encoder only: exclude language_model
+            target_modules = ["q_proj", "k_proj", "v_proj", "out_proj"]
+            exclude_modules = r"language_model\..*"
 
         lora_config = LoraConfig(
             r=lora_r,
             lora_alpha=lora_alpha,
             lora_dropout=0.05,
             target_modules=target_modules,
+            exclude_modules=exclude_modules,
             bias="none",
             inference_mode=False,
         )

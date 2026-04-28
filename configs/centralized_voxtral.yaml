@@ -21,6 +21,7 @@ voxtral-model-name:  mistralai/Voxtral-Mini-3B-2507
 model-cache-dir:     ""
 data-language:       en
 finetune-encoder:    false
+finetune-llm:        true
 
 # ---- LoRA ----
 use-lora:            true

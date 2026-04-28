@@ -162,6 +162,7 @@ def load_voxtral_model(checkpoint_path, args):
         use_lora=args.use_lora,
         lora_r=args.lora_r,
         lora_alpha=args.lora_alpha,
+        finetune_llm=True,
         finetune_encoder=False,
         cache_dir=args.model_cache_dir,
     )

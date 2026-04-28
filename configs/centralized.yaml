@@ -52,8 +52,8 @@ pretrained-checkpoint: ""
 output-dir:            centralized_checkpoints
 
 # ---- Hardware ----
-devices:     auto
-strategy:    auto
+devices:     0,1,2,3
+strategy:    ddp
 precision:   bf16-mixed
 
 # ---- Logging ----

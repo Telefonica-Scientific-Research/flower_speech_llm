@@ -61,8 +61,9 @@ export TORCH_EXTENSIONS_DIR=$TORCH_EXT_DIR
 # export HF_DATASETS_CACHE=$CACHE_DIR
 export DS_BUILD_OPS=0
 export CUDA_VISIBLE_DEVICES=0,1,2,3
-# export PYTHONUNBUFFERED=1
-
+export PYTHONUNBUFFERED=1
+# Prevent Lightning from auto-detecting SLURM (ntasks-per-node=1 vs devices=4 conflict)
+export SLURM_NTASKS_PER_NODE=4
 # CUDA optimizations for H100
 # export CUDA_DEVICE_MAX_CONNECTIONS=1
 # export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512

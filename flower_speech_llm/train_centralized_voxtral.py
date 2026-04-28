@@ -76,6 +76,8 @@ def parse_args():
     p.add_argument("--no-lora", dest="use_lora", action="store_false")
     p.add_argument("--lora-r", type=int, default=8)
     p.add_argument("--lora-alpha", type=int, default=16)
+    p.add_argument("--finetune-llm", action="store_true", default=True)
+    p.add_argument("--no-finetune-llm", dest="finetune_llm", action="store_false")
     p.add_argument("--finetune-encoder", action="store_true", default=False)
 
     # ---- Optimizer ----
@@ -162,6 +164,7 @@ def main():
     print("=" * 70)
     print(f"Model:        {args.voxtral_model_name}")
     print(f"LoRA:         r={args.lora_r}, alpha={args.lora_alpha}" if args.use_lora else "LoRA: off")
+    print(f"Finetune LLM: {args.finetune_llm}")
     print(f"Finetune enc: {args.finetune_encoder}")
     print(f"Train dir:    {args.csv_train_dir}")
     print(f"Dev dir:      {args.csv_dev_dir}")
@@ -177,6 +180,7 @@ def main():
         use_lora=args.use_lora,
         lora_r=args.lora_r,
         lora_alpha=args.lora_alpha,
+        finetune_llm=args.finetune_llm,
         finetune_encoder=args.finetune_encoder,
         cache_dir=cache_dir,
     )
