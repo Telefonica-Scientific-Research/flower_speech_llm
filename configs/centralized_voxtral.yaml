@@ -58,3 +58,4 @@ output-dir:            centralized_checkpoints_voxtral
 # ---- Logging ----
 wandb-project: ""
 run-name:      centralized-voxtral
+log-every-n-steps: 1000

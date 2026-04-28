@@ -187,12 +187,10 @@ def parse_args():
 
     # ---- Data config ----
     p.add_argument("--csv-train-dir",
-                   default="/home/id02619@hi.inet/repos/FL/flower_speech_llm/"
-                           "flower_speech_llm/fl_A1_mixed_316",
+                   default="flower_speech_llm/fl_A1_mixed_316",
                    help="Directory with training CSV files (all pooled together)")
     p.add_argument("--csv-dev-dir",
-                   default="/home/id02619@hi.inet/repos/FL/flower_speech_llm/"
-                           "flower_speech_llm/fl_MLS_dev_speaker",
+                   default="flower_speech_llm/fl_MLS_dev_speaker",
                    help="Directory with dev/validation CSV files")
 
     # ---- Checkpoint / resume ----

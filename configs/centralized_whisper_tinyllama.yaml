@@ -56,3 +56,4 @@ precision:   bf16-mixed
 # ---- Logging ----
 wandb-project: ""
 run-name:      centralized-whisper-tinyllama
+log-every-n-steps: 1000

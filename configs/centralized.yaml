@@ -59,3 +59,4 @@ precision:   bf16-mixed
 # ---- Logging ----
 wandb-project: ""
 run-name:      centralized-speech-llm
+log-every-n-steps: 1000

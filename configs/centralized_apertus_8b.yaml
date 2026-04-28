@@ -51,3 +51,6 @@ csv-test-dir:   flower_speech_llm/fl_MLS_test
 # ---- Checkpoint / Resume ----
 pretrained-checkpoint: ""
 output-dir:            centralized_checkpoints_apertus_8b
+
+# ---- Logging ----
+log-every-n-steps: 1000
