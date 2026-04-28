@@ -25,13 +25,42 @@ import sys
 import yaml
 import torch
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, TQDMProgressBar
 from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import ConcatDataset, DataLoader
 
 from .model.voxtral import get_voxtral
 from .trainer_voxtral import VoxtralLightning
 from .dataset_voxtral import VoxtralCSVDataset, VoxtralCollator
+
+
+class LogProgressBar(TQDMProgressBar):
+    """Progress bar that prints newlines instead of \\r for SLURM log files."""
+
+    def init_train_tqdm(self):
+        bar = super().init_train_tqdm()
+        bar.dynamic_ncols = False
+        bar.ncols = 120
+        # Force newline so each update is a new line in the log file
+        bar.ascii = True
+        return bar
+
+    def init_validation_tqdm(self):
+        bar = super().init_validation_tqdm()
+        bar.dynamic_ncols = False
+        bar.ncols = 120
+        bar.ascii = True
+        return bar
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        super().on_train_batch_end(trainer, pl_module, outputs, batch, batch_idx)
+        if batch_idx % self.refresh_rate == 0:
+            print(self.train_progress_bar, flush=True)
+
+    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
+        super().on_validation_batch_end(trainer, pl_module, outputs, batch, batch_idx, dataloader_idx)
+        if batch_idx % self.refresh_rate == 0:
+            print(self.val_progress_bar, flush=True)
 
 
 class AdapterCheckpoint(pl.Callback):
@@ -241,6 +270,7 @@ def main():
         ),
         AdapterCheckpoint(output_dir=args.output_dir),
         LearningRateMonitor(logging_interval="step"),
+        LogProgressBar(refresh_rate=50),
     ]
 
     # ---- Logger ----
