@@ -49,8 +49,8 @@ pretrained-checkpoint: ""
 output-dir:            centralized_checkpoints_whisper_tinyllama
 
 # ---- Hardware ----
-devices:     auto
-strategy:    auto
+devices:     4
+strategy:    ddp
 precision:   bf16-mixed
 
 # ---- Logging ----
