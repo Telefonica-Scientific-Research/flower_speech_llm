@@ -130,9 +130,10 @@ class SpeechLLMFedAvg(FedAvg):
             gc.collect()
             return
 
-        state_dict = OrderedDict(
-            {k: torch.tensor(np.array(v)) for k, v in zip(trainable_names, agg_arrays)}
-        )
+        state_dict = OrderedDict()
+        for k, v in zip(trainable_names, agg_arrays):
+            arr = v.numpy() if hasattr(v, 'numpy') else np.asarray(v)
+            state_dict[k] = torch.from_numpy(arr.copy())
         try:
             model.load_state_dict(state_dict, strict=False)
         except RuntimeError as e:
