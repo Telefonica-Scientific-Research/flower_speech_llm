@@ -273,15 +273,20 @@ def main():
     print("=" * 70)
     print("Centralized SpeechLLM Training")
     print("=" * 70)
+    print(f"Config:       {args.config or '(none — using defaults)'}")
+    print(f"CWD:          {os.getcwd()}")
     print(f"LLM:          {args.llm_name}")
     print(f"Encoder:      {args.audio_encoder_name}")
+    print(f"Connector:    {args.connector_name} (k={args.connector_k})")
+    print(f"Finetune LLM: {args.finetune_llm}")
+    print(f"Finetune enc: {args.finetune_encoder}")
     print(f"LoRA:         r={args.lora_r}, alpha={args.lora_alpha}" if args.use_lora else "LoRA: off")
-    print(f"Train dir:    {args.csv_train_dir}")
-    print(f"Dev dir:      {args.csv_dev_dir}")
+    print(f"Train dir:    {os.path.abspath(args.csv_train_dir)}")
+    print(f"Dev dir:      {os.path.abspath(args.csv_dev_dir)}")
     print(f"Max epochs:   {args.max_epochs}")
     print(f"Batch size:   {args.train_batch_size} × {args.grad_accumulate_steps} accum "
           f"= {args.train_batch_size * args.grad_accumulate_steps} effective")
-    print(f"Output dir:   {args.output_dir}")
+    print(f"Run dir:      {run_dir}")
     print("=" * 70)
 
     model = SpeechLLMLightning(

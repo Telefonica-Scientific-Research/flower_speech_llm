@@ -112,8 +112,10 @@ class MyCollator:
             post_prompts, padding=True, return_tensors='pt',
             truncation=False, add_special_tokens=False,
         )
+        bos = self.tokenizer.bos_token or ""
+        eos = self.tokenizer.eos_token or ""
         output_texts = [
-            self.tokenizer.bos_token + o + self.tokenizer.eos_token
+            bos + o + eos
             for o in output_prompts
         ]
         out_enc = self.tokenizer(
