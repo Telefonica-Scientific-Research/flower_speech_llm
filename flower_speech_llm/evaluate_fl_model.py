@@ -34,6 +34,11 @@ import pickle
 from contextlib import nullcontext
 from collections import defaultdict
 
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
 import numpy as np
 import torch
 import pytorch_lightning as pl
@@ -114,6 +119,115 @@ def _get_autocast_context(device, precision):
     if precision == "fp16-mixed":
         return torch.autocast(device_type="cuda", dtype=torch.float16)
     return nullcontext()
+
+
+def _extract_cli_override_dests(parser):
+    """Return argparse dest names explicitly provided through CLI flags."""
+    opt_to_dest = {}
+    for action in parser._actions:
+        for opt in action.option_strings:
+            opt_to_dest[opt] = action.dest
+
+    overrides = set()
+    for token in sys.argv[1:]:
+        if not token.startswith("--"):
+            continue
+        # Handle both --arg value and --arg=value
+        opt = token.split("=", 1)[0]
+        if opt in opt_to_dest:
+            overrides.add(opt_to_dest[opt])
+    return overrides
+
+
+def _cfg_get(cfg, *paths):
+    """Get first existing value from one of dot-separated paths."""
+    for path in paths:
+        cur = cfg
+        ok = True
+        for key in path.split("."):
+            if not isinstance(cur, dict) or key not in cur:
+                ok = False
+                break
+            cur = cur[key]
+        if ok:
+            return cur
+    return None
+
+
+def _infer_model_type_from_cfg(cfg):
+    model_type = _cfg_get(cfg, "model_type")
+    if isinstance(model_type, str) and model_type.strip():
+        return model_type.strip().lower()
+
+    model_name = _cfg_get(cfg, "model.type", "model.name", "voxtral_model_name")
+    if isinstance(model_name, str):
+        low = model_name.lower()
+        if "voxtral" in low:
+            return "voxtral"
+    return None
+
+
+def _apply_config_overrides(args, parser):
+    """Apply YAML config values unless the corresponding CLI arg was passed."""
+    if not args.config_yaml:
+        return args
+
+    if yaml is None:
+        raise ImportError("PyYAML is required to use --config-yaml. Install with: pip install pyyaml")
+
+    if not os.path.isfile(args.config_yaml):
+        raise FileNotFoundError(f"Config YAML not found: {args.config_yaml}")
+
+    with open(args.config_yaml, "r") as f:
+        cfg = yaml.safe_load(f) or {}
+    if not isinstance(cfg, dict):
+        raise ValueError("Config YAML root must be a mapping/dictionary")
+
+    cli_overrides = _extract_cli_override_dests(parser)
+
+    # dest -> possible YAML paths
+    mapping = {
+        "checkpoint": ["checkpoint", "eval.checkpoint"],
+        "test_dir": ["test_dir", "eval.test_dir", "data.test_dir"],
+        "test_files": ["test_files", "eval.test_files"],
+        "max_samples": ["max_samples", "eval.max_samples"],
+        "output_json": ["output_json", "eval.output_json"],
+        "audio_encoder_name": ["audio_encoder_name", "model.audio_encoder_name"],
+        "llm_name": ["llm_name", "model.llm_name"],
+        "connector_name": ["connector_name", "model.connector_name"],
+        "audio_enc_dim": ["audio_enc_dim", "model.audio_enc_dim"],
+        "llm_dim": ["llm_dim", "model.llm_dim"],
+        "connector_k": ["connector_k", "model.connector_k"],
+        "use_lora": ["use_lora", "model.use_lora", "lora.use"],
+        "lora_r": ["lora_r", "lora.r"],
+        "lora_alpha": ["lora_alpha", "lora.alpha"],
+        "voxtral_model_name": ["voxtral_model_name", "model.voxtral_model_name", "model.name", "model.type"],
+        "model_cache_dir": ["model_cache_dir", "cache.model_dir", "cache_dir"],
+        "device": ["device", "eval.device"],
+        "precision": ["precision", "eval.precision"],
+    }
+
+    # Model type is special because train config may encode it inside model.type
+    if "model_type" not in cli_overrides:
+        inferred = _infer_model_type_from_cfg(cfg)
+        if inferred in {"speech-llm", "voxtral"}:
+            args.model_type = inferred
+
+    for dest, paths in mapping.items():
+        if dest in cli_overrides:
+            continue
+        val = _cfg_get(cfg, *paths)
+        if val is None:
+            continue
+
+        # If model.type/model.name was used to feed voxtral_model_name but this
+        # is a speech-llm run, skip accidental overwrite.
+        if dest == "voxtral_model_name" and args.model_type != "voxtral":
+            continue
+
+        setattr(args, dest, val)
+
+    return args
 
 
 def evaluate_speech_llm_on_csv(model,
@@ -369,7 +483,10 @@ def main():
     parser = argparse.ArgumentParser(
         description="Evaluate FL SpeechLLM checkpoint on MLS test sets"
     )
-    parser.add_argument("--checkpoint", required=True, help="Path to model checkpoint (.pt or .ckpt)")
+    parser.add_argument("--config-yaml", default=None,
+                        help="Optional YAML config file (same style as training). "
+                             "CLI args override values from this file.")
+    parser.add_argument("--checkpoint", default=None, help="Path to model checkpoint (.pt or .ckpt)")
     parser.add_argument("--test-dir", default="fl_MLS_test", help="Directory containing test CSVs")
     parser.add_argument("--test-files", nargs="*", default=None, help="Specific test CSV filenames")
     parser.add_argument("--max-samples", type=int, default=None, help="Max samples per test file")
@@ -405,10 +522,15 @@ def main():
         help="Inference precision mode. Mixed modes use torch.autocast on CUDA.",
     )
     args = parser.parse_args()
+    args = _apply_config_overrides(args, parser)
+
+    if not args.checkpoint:
+        parser.error("--checkpoint is required (either via CLI or --config-yaml)")
 
     print("=" * 70)
     print("MLS Federated Model Evaluation")
     print("=" * 70)
+    print(f"Config YAML: {args.config_yaml if args.config_yaml else '(none)'}")
     print(f"Model type:  {args.model_type}")
     print(f"Checkpoint:  {args.checkpoint}")
     print(f"Test dir:    {args.test_dir}")
