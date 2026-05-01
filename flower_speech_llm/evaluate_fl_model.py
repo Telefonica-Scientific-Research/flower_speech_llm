@@ -30,6 +30,8 @@ import sys
 import argparse
 import json
 import re
+import pickle
+from contextlib import nullcontext
 from collections import defaultdict
 
 import numpy as np
@@ -52,6 +54,27 @@ from torch.utils.data import Dataset, DataLoader
 # Speech-LLM (WavLM) model loading + evaluation
 # ---------------------------------------------------------------------------
 
+def _load_checkpoint_for_state_dict(checkpoint_path):
+    """Load a checkpoint and return a plain state_dict.
+
+    PyTorch 2.6 changed torch.load default to weights_only=True, which can
+    fail for older Lightning checkpoints containing python objects.
+    We first try a safe load, then fall back to trusted full unpickling.
+    """
+    try:
+        ckpt_obj = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+    except (pickle.UnpicklingError, RuntimeError) as e:
+        print(
+            "WARNING: Safe checkpoint loading failed. Falling back to "
+            "weights_only=False for trusted local checkpoint. "
+            f"Reason: {e}"
+        )
+        ckpt_obj = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+
+    if isinstance(ckpt_obj, dict) and "state_dict" in ckpt_obj:
+        return ckpt_obj["state_dict"]
+    return ckpt_obj
+
 def load_speech_llm(checkpoint_path, model_kwargs):
     """Instantiate SpeechLLMLightning and load checkpoint weights.
 
@@ -60,7 +83,7 @@ def load_speech_llm(checkpoint_path, model_kwargs):
     always loaded from pretrained HuggingFace models.
     """
     model = SpeechLLMLightning(**model_kwargs)
-    state_dict = torch.load(checkpoint_path, map_location="cpu")
+    state_dict = _load_checkpoint_for_state_dict(checkpoint_path)
     model.load_state_dict(state_dict, strict=False)
     n_loaded = sum(1 for k in state_dict if k in dict(model.named_parameters()))
     print(f"Loaded speech-llm checkpoint: {checkpoint_path} ({len(state_dict)} keys, "
@@ -81,7 +104,23 @@ def _extract_field_robust(text, field_name):
     return match.group(1) if match else ""
 
 
-def evaluate_speech_llm_on_csv(model, csv_path, device="cuda", max_samples=None):
+def _get_autocast_context(device, precision):
+    """Return an autocast context for mixed precision inference."""
+    precision = str(precision).lower()
+    if not str(device).startswith("cuda"):
+        return nullcontext()
+    if precision == "bf16-mixed":
+        return torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+    if precision == "fp16-mixed":
+        return torch.autocast(device_type="cuda", dtype=torch.float16)
+    return nullcontext()
+
+
+def evaluate_speech_llm_on_csv(model,
+                               csv_path,
+                               device="cuda",
+                               max_samples=None,
+                               precision="32"):
     """Evaluate WavLM+LLM model on a single test CSV."""
     collator = MyCollator(
         audio_encoder_name=model.hparams.get("audio_encoder_name", "microsoft/wavlm-large"),
@@ -114,10 +153,11 @@ def evaluate_speech_llm_on_csv(model, csv_path, device="cuda", max_samples=None)
             out_ids = out_ids.to(device)
             out_mask = out_mask.to(device)
 
-            embeds, atts, label_ids = model.encode(
-                mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask
-            )
-            outputs = model(embeds, atts, label_ids)
+            with _get_autocast_context(device, precision):
+                embeds, atts, label_ids = model.encode(
+                    mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask
+                )
+                outputs = model(embeds, atts, label_ids)
 
             logits = outputs.logits
             predicted_ids = torch.argmax(logits, dim=-1).cpu()
@@ -168,7 +208,7 @@ def load_voxtral_model(checkpoint_path, args):
     )
     lightning_model = VoxtralLightning(model=model, processor=processor)
 
-    state_dict = torch.load(checkpoint_path, map_location="cpu")
+    state_dict = _load_checkpoint_for_state_dict(checkpoint_path)
     lightning_model.load_state_dict(state_dict, strict=False)
     print(f"Loaded voxtral checkpoint: {checkpoint_path}")
     return lightning_model
@@ -271,7 +311,8 @@ class VoxtralEvalCollator:
 
 
 def evaluate_voxtral_on_csv(model, csv_path, device="cuda", max_samples=None,
-                            voxtral_model_name="mistralai/Voxtral-Mini-3B-2507"):
+                            voxtral_model_name="mistralai/Voxtral-Mini-3B-2507",
+                            precision="32"):
     """Evaluate Voxtral model on a single test CSV (language-agnostic)."""
     collator = VoxtralEvalCollator(model.processor, voxtral_model_name)
     dataset = VoxtralEvalDataset(csv_path)
@@ -295,7 +336,8 @@ def evaluate_voxtral_on_csv(model, csv_path, device="cuda", max_samples=None,
             # Move tensors to device
             batch = {k: v.to(device) if torch.is_tensor(v) else v for k, v in batch.items()}
 
-            outputs = model.model(**batch)
+            with _get_autocast_context(device, precision):
+                outputs = model.model(**batch)
             logits = outputs.logits
             predicted_ids = torch.argmax(logits, dim=-1).cpu()
 
@@ -356,6 +398,12 @@ def main():
     parser.add_argument("--model-cache-dir", default="")
 
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument(
+        "--precision",
+        default="32",
+        choices=["32", "bf16-mixed", "fp16-mixed"],
+        help="Inference precision mode. Mixed modes use torch.autocast on CUDA.",
+    )
     args = parser.parse_args()
 
     print("=" * 70)
@@ -365,6 +413,7 @@ def main():
     print(f"Checkpoint:  {args.checkpoint}")
     print(f"Test dir:    {args.test_dir}")
     print(f"Device:      {args.device}")
+    print(f"Precision:   {args.precision}")
     if args.model_type == "voxtral":
         print(f"Model:       {args.voxtral_model_name}")
         print(f"Language:    unknown (language-agnostic evaluation)")
@@ -425,11 +474,13 @@ def main():
                 model, csv_path, device=args.device,
                 max_samples=args.max_samples,
                 voxtral_model_name=args.voxtral_model_name,
+                precision=args.precision,
             )
         else:
             results = evaluate_speech_llm_on_csv(
                 model, csv_path, device=args.device,
                 max_samples=args.max_samples,
+                precision=args.precision,
             )
 
         if results["wer_scores"]:
