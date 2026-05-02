@@ -531,7 +531,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Evaluate FL SpeechLLM checkpoint on MLS test sets"
     )
-    parser.add_argument("--config-yaml", default=None,
+    parser.add_argument("--config", "--config-yaml", dest="config_yaml", default=None,
                         help="Optional YAML config file (same style as training). "
                              "CLI args override values from this file.")
     parser.add_argument("--checkpoint", default=None, help="Path to model checkpoint (.pt or .ckpt)")
