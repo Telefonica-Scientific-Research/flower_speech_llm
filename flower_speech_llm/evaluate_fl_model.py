@@ -632,9 +632,13 @@ def main():
     print("=" * 70)
 
     # ---- Save results ----
-    with open(args.output_json, "w") as f:
+    checkpoint_dir = os.path.dirname(os.path.abspath(args.checkpoint))
+    output_filename = os.path.basename(args.output_json) if args.output_json else "eval_results.json"
+    output_json_path = os.path.join(checkpoint_dir, output_filename)
+
+    with open(output_json_path, "w") as f:
         json.dump(all_results, f, indent=2)
-    print(f"\nResults saved to: {args.output_json}")
+    print(f"\nResults saved to: {output_json_path}")
 
 
 if __name__ == "__main__":
