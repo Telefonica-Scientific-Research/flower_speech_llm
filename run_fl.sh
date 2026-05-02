@@ -16,12 +16,36 @@ fi
 
 CONFIG="$1"; shift
 
+# Create a unique experiment directory under checkpoint-dir to avoid
+# collisions when re-running the same YAML (e.g., multiple A1 runs).
+EXP_DIR=$(python -c "
+import os
+from datetime import datetime
+import yaml
+
+config_path = '$CONFIG'
+cfg = yaml.safe_load(open(config_path)) or {}
+
+base_dir = str(cfg.get('checkpoint-dir', 'FL_SLAM_checkpoints'))
+base_dir = os.path.expanduser(os.path.expandvars(base_dir))
+config_stem = os.path.splitext(os.path.basename(config_path))[0]
+ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+job_id = os.environ.get('SLURM_JOB_ID', '').strip()
+job_suffix = f'_job{job_id}' if job_id else ''
+
+print(os.path.join(base_dir, f'{config_stem}_{ts}{job_suffix}'))
+")
+
+mkdir -p "$EXP_DIR"
+cp "$CONFIG" "$EXP_DIR/$(basename "$CONFIG")"
+
 RUN_CONFIG=$(python -c "
 import yaml
 cfg = yaml.safe_load(open('$CONFIG'))
 parts = []
 for k, v in cfg.items():
     if k.startswith('_'): continue
+    if k == 'checkpoint-dir': continue
     if isinstance(v, bool):
         parts.append(f'{k}={str(v).lower()}')
     elif isinstance(v, str):
@@ -30,6 +54,9 @@ for k, v in cfg.items():
         parts.append(f'{k}={v}')
 print(' '.join(parts))
 ")
+
+# Force checkpoint-dir to this run-specific directory.
+RUN_CONFIG="$RUN_CONFIG checkpoint-dir=\"$EXP_DIR\""
 
 # Extract simulation options (prefixed with _) for --federation-config
 # Also compute num visible GPUs from CUDA_VISIBLE_DEVICES to pass to Ray
@@ -56,8 +83,12 @@ print(' '.join(parts))
 ")
 
 echo "Config: $CONFIG"
+echo "Experiment dir: $EXP_DIR"
 echo "Run config: $RUN_CONFIG"
 echo "Federation config: $FED_CONFIG"
 echo ""
+
+printf '%s\n' "$RUN_CONFIG" > "$EXP_DIR/run_config.txt"
+printf '%s\n' "$FED_CONFIG" > "$EXP_DIR/federation_config.txt"
 
 flwr run . --run-config "$RUN_CONFIG" --federation-config "$FED_CONFIG" "$@"
