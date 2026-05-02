@@ -167,6 +167,24 @@ def _infer_model_type_from_cfg(cfg):
     return None
 
 
+def _find_latest_checkpoint_in_dir(directory):
+    """Return the most recently modified checkpoint file in a directory."""
+    if not directory or not os.path.isdir(directory):
+        return None
+
+    candidates = []
+    for name in os.listdir(directory):
+        if name.endswith((".ckpt", ".pt", ".pth")):
+            path = os.path.join(directory, name)
+            if os.path.isfile(path):
+                candidates.append(path)
+
+    if not candidates:
+        return None
+
+    return max(candidates, key=os.path.getmtime)
+
+
 def _apply_config_overrides(args, parser):
     """Apply YAML config values unless the corresponding CLI arg was passed."""
     if not args.config_yaml:
@@ -187,7 +205,9 @@ def _apply_config_overrides(args, parser):
 
     # dest -> possible YAML paths
     mapping = {
-        "checkpoint": ["checkpoint", "eval.checkpoint"],
+        # Intentionally only read eval.checkpoint from YAML.
+        # Top-level checkpoint is reserved for training configs.
+        "checkpoint": ["eval.checkpoint"],
         "test_dir": ["test_dir", "eval.test_dir", "data.test_dir"],
         "test_files": ["test_files", "eval.test_files"],
         "max_samples": ["max_samples", "eval.max_samples"],
@@ -226,6 +246,34 @@ def _apply_config_overrides(args, parser):
             continue
 
         setattr(args, dest, val)
+
+    # If checkpoint is still unset, try latest file in output-dir.
+    # This supports training-style configs that only define where checkpoints
+    # are written.
+    if "checkpoint" not in cli_overrides and not args.checkpoint:
+        output_dir = _cfg_get(
+            cfg,
+            "output-dir",
+            "output_dir",
+            "eval.output-dir",
+            "eval.output_dir",
+        )
+        if output_dir:
+            config_dir = os.path.dirname(os.path.abspath(args.config_yaml))
+            output_dir = os.path.expanduser(str(output_dir))
+            candidate_dirs = [output_dir]
+            if not os.path.isabs(output_dir):
+                candidate_dirs.append(os.path.join(config_dir, output_dir))
+
+            for d in candidate_dirs:
+                latest = _find_latest_checkpoint_in_dir(d)
+                if latest:
+                    args.checkpoint = latest
+                    args._checkpoint_source = f"latest in output-dir ({d})"
+                    break
+
+    if args.checkpoint and not hasattr(args, "_checkpoint_source"):
+        args._checkpoint_source = "CLI --checkpoint" if "checkpoint" in cli_overrides else "eval.checkpoint"
 
     return args
 
@@ -525,14 +573,19 @@ def main():
     args = _apply_config_overrides(args, parser)
 
     if not args.checkpoint:
-        parser.error("--checkpoint is required (either via CLI or --config-yaml)")
+        parser.error(
+            "No checkpoint resolved. Provide --checkpoint, set eval.checkpoint in YAML, "
+            "or ensure output-dir contains at least one checkpoint file."
+        )
 
     print("=" * 70)
     print("MLS Federated Model Evaluation")
     print("=" * 70)
     print(f"Config YAML: {args.config_yaml if args.config_yaml else '(none)'}")
     print(f"Model type:  {args.model_type}")
+    checkpoint_source = getattr(args, "_checkpoint_source", "CLI --checkpoint")
     print(f"Checkpoint:  {args.checkpoint}")
+    print(f"Source:      {checkpoint_source}")
     print(f"Test dir:    {args.test_dir}")
     print(f"Device:      {args.device}")
     print(f"Precision:   {args.precision}")
