@@ -34,7 +34,7 @@ module load singularity
 PATH_SINGULARITY="/gpfs/projects/ehpc628/jls/singularity_containers/flower_speech_llm"
 CACHE_DIR='/gpfs/scratch/ehpc628/models/'
 TORCH_EXT_DIR="/gpfs/scratch/ehpc628/jls/torch_extensions"
-SANDBOX_DIR="/gpfs/projects/ehpc628/jls/singularity_containers/flower_speech_llm"
+SANDBOX_DIR="/gpfs/projects/ehpc628/jls/singularity_containers/flower_speech_llm/opt/flower_speech_llm"
 SCRATCH_DIR="/gpfs/scratch/ehpc628/jls/ehpc628XXX"
 REPO_DIR="/opt/flower_speech_llm"
 
@@ -58,7 +58,10 @@ export HF_HUB_CACHE=$CACHE_DIR
 export TORCH_EXTENSIONS_DIR=$TORCH_EXT_DIR
 export DS_BUILD_OPS=0
 export PYTHONUNBUFFERED=1
-export RAY_TMPDIR=$SCRATCH_DIR
+export FLWR_HOME=$SCRATCH_DIR/flwr_${SLURM_JOB_ID:-noslurm}
+export RAY_TMPDIR=$SCRATCH_DIR/ray_${SLURM_JOB_ID:-noslurm}
+mkdir -p $FLWR_HOME
+mkdir -p $RAY_TMPDIR
 unset RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES
 
 # Display GPU info

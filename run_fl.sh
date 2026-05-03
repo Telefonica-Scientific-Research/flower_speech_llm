@@ -16,6 +16,15 @@ fi
 
 CONFIG="$1"; shift
 
+# Isolate Flower runtime state (SQLite/token store) per run to avoid
+# cross-job lock contention when multiple experiments run concurrently.
+if [[ -z "${FLWR_HOME:-}" ]]; then
+    ts=$(date +%Y%m%d_%H%M%S)
+    run_id="${SLURM_JOB_ID:-$$}"
+    export FLWR_HOME="$PWD/.flwr_runs/flwr_${run_id}_${ts}"
+fi
+mkdir -p "$FLWR_HOME"
+
 # Create a unique experiment directory under checkpoint-dir to avoid
 # collisions when re-running the same YAML (e.g., multiple A1 runs).
 EXP_DIR=$(python -c "
@@ -83,6 +92,7 @@ print(' '.join(parts))
 ")
 
 echo "Config: $CONFIG"
+echo "FLWR_HOME: $FLWR_HOME"
 echo "Experiment dir: $EXP_DIR"
 echo "Run config: $RUN_CONFIG"
 echo "Federation config: $FED_CONFIG"
