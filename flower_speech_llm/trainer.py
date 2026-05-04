@@ -208,6 +208,21 @@ class SpeechLLMLightning(pl.LightningModule):
                 fields[field] = val
         return fields
 
+    def _log_val_sample_to_wandb(self, sample_idx, extracted_pred, extracted_target, generated_output_text):
+        """Best-effort W&B sample logging that is safe when W&B is disabled."""
+        if not hasattr(self, "trainer") or self.trainer is None:
+            return
+        if not self.trainer.is_global_zero:
+            return
+        if wandb.run is None:
+            return
+
+        wandb.log({
+            f"val_sample_{sample_idx}_pred": wandb.Html(f"<pre>{str(extracted_pred)}</pre>"),
+            f"val_sample_{sample_idx}_target": wandb.Html(f"<pre>{str(extracted_target)}</pre>"),
+            f"val_sample_{sample_idx}_gen": wandb.Html(f"<pre>{generated_output_text}</pre>"),
+        }, commit=False)
+
     def validation_step(self, batch, batch_idx):
             mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask = batch
             embeds, atts, label_ids = self.encode(
@@ -273,12 +288,12 @@ class SpeechLLMLightning(pl.LightningModule):
 
             if batch_idx in self.selected_samples_for_logging:
                 sample_idx = self.selected_samples_for_logging.index(batch_idx)
-                # Use wandb.log to log prediction and truth texts
-                wandb.log({
-                    f"val_sample_{sample_idx}_pred": wandb.Html(f"<pre>{str(extracted_pred)}</pre>"), 
-                    f"val_sample_{sample_idx}_target": wandb.Html(f"<pre>{str(extracted_target)}</pre>"),
-                    f"val_sample_{sample_idx}_gen": wandb.Html(f"<pre>{generated_output_text}</pre>"),
-                }, commit=False)
+                self._log_val_sample_to_wandb(
+                    sample_idx=sample_idx,
+                    extracted_pred=extracted_pred,
+                    extracted_target=extracted_target,
+                    generated_output_text=generated_output_text,
+                )
     
     def test_step(self, batch, batch_idx):
             mel, mel_mask, pre_ids, pre_mask, post_ids, post_mask, out_ids, out_mask = batch
@@ -345,7 +360,11 @@ class SpeechLLMLightning(pl.LightningModule):
     
     def on_validation_epoch_start(self):
         """Select two random validation samples to log for each epoch."""
-        self.selected_samples_for_logging = random.sample(range(self.num_validation_samples), 2)
+        sample_count = min(2, max(0, int(self.num_validation_samples)))
+        if sample_count == 0:
+            self.selected_samples_for_logging = []
+            return
+        self.selected_samples_for_logging = random.sample(range(self.num_validation_samples), sample_count)
 
     
     def extract_dictionary(self, input_string):
