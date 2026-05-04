@@ -78,7 +78,18 @@ class SpeechLLMLightning(pl.LightningModule):
             audio_encoder_name, finetune_encoder,
             use_lora=use_lora, lora_r=lora_r, lora_alpha=lora_alpha,
         )
-        self.connector = get_connector(connector_name, audio_enc_dim, llm_dim, connector_k)
+        actual_audio_dim = self._infer_encoder_hidden_size()
+        connector_audio_dim = audio_enc_dim
+        if actual_audio_dim is not None and connector_audio_dim != actual_audio_dim:
+            print(
+                "WARNING: audio_enc_dim does not match encoder hidden size. "
+                f"audio_enc_dim={connector_audio_dim}, encoder_hidden_size={actual_audio_dim}. "
+                "Using encoder hidden size for connector to avoid shape mismatch."
+            )
+            connector_audio_dim = actual_audio_dim
+            self.audio_enc_dim = actual_audio_dim
+
+        self.connector = get_connector(connector_name, connector_audio_dim, llm_dim, connector_k)
         self.llm_tokenizer, self.llm_model = get_llm(
             llm_name, finetune_llm=finetune_llm,
             use_lora=use_lora, lora_r=lora_r, lora_alpha=lora_alpha,
@@ -89,6 +100,18 @@ class SpeechLLMLightning(pl.LightningModule):
         self.warmup_steps = warmup_steps
         self.use_embedding_loss = False
         self.num_validation_samples = 5000
+
+    def _infer_encoder_hidden_size(self):
+        """Best-effort extraction of encoder output hidden size."""
+        model = getattr(self.audio_encoder, "model", None)
+        config = getattr(model, "config", None)
+        hidden_size = getattr(config, "hidden_size", None)
+        if isinstance(hidden_size, int) and hidden_size > 0:
+            return hidden_size
+        d_model = getattr(config, "d_model", None)
+        if isinstance(d_model, int) and d_model > 0:
+            return d_model
+        return None
 
     def configure_optimizers(self):
         opt = [

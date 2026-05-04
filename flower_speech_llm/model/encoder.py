@@ -56,12 +56,34 @@ class TransformerAudioEncoder(nn.Module):
 class WhisperEncoder(nn.Module):
     """Wrapper around HuggingFace Whisper encoder."""
 
-    def __init__(self, model_name: str, finetune: bool = False):
+    def __init__(self, model_name: str, finetune: bool = False,
+                 use_lora: bool = False, lora_r: int = 8, lora_alpha: int = 16):
         super().__init__()
         from transformers import WhisperModel
         whisper_model = WhisperModel.from_pretrained(model_name)
         self.model = whisper_model.encoder
-        if not finetune:
+
+        if finetune and use_lora:
+            # Freeze base encoder, train only LoRA adapters on attention projections.
+            for param in self.model.parameters():
+                param.requires_grad = False
+            lora_config = LoraConfig(
+                r=lora_r,
+                lora_alpha=lora_alpha,
+                lora_dropout=0.05,
+                target_modules=["q_proj", "k_proj", "v_proj"],
+                bias="none",
+                inference_mode=False,
+            )
+            self.model = get_peft_model(self.model, lora_config)
+        elif finetune and not use_lora:
+            warnings.warn(
+                f"Full fine-tuning of encoder '{model_name}' — all weights are "
+                "trainable. This is memory-intensive and increases FL communication "
+                "cost. Consider use_lora=True for parameter-efficient training.",
+                stacklevel=2,
+            )
+        elif not finetune:
             for param in self.model.parameters():
                 param.requires_grad = False
 
@@ -86,7 +108,13 @@ def get_audio_encoder(encoder_name: str, finetune: bool = False,
         An nn.Module audio encoder.
     """
     if "openai/whisper" in encoder_name:
-        return WhisperEncoder(encoder_name, finetune)
+        return WhisperEncoder(
+            encoder_name,
+            finetune,
+            use_lora=use_lora,
+            lora_r=lora_r,
+            lora_alpha=lora_alpha,
+        )
     else:
         # WavLM, HuBERT, Wav2Vec2, etc.
         return TransformerAudioEncoder(encoder_name, finetune, use_lora, lora_r, lora_alpha)

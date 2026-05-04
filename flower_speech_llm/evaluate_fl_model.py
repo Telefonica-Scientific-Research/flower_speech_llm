@@ -80,6 +80,21 @@ def _load_checkpoint_for_state_dict(checkpoint_path):
         return ckpt_obj["state_dict"]
     return ckpt_obj
 
+
+def _infer_connector_audio_dim_from_state_dict(state_dict):
+    """Infer connector input dimension from checkpoint weights if available."""
+    linear_w = state_dict.get("connector.linear.weight")
+    if torch.is_tensor(linear_w) and linear_w.ndim == 2:
+        # linear.weight shape is (llm_dim, audio_dim)
+        return int(linear_w.shape[1])
+
+    conv_w = state_dict.get("connector.conv.weight")
+    if torch.is_tensor(conv_w) and conv_w.ndim == 3:
+        # conv.weight shape is (llm_dim, audio_dim, kernel)
+        return int(conv_w.shape[1])
+
+    return None
+
 def load_speech_llm(checkpoint_path, model_kwargs):
     """Instantiate SpeechLLMLightning and load checkpoint weights.
 
@@ -87,8 +102,20 @@ def load_speech_llm(checkpoint_path, model_kwargs):
     and legacy full state_dicts (~779 keys).  Frozen base weights are
     always loaded from pretrained HuggingFace models.
     """
-    model = SpeechLLMLightning(**model_kwargs)
     state_dict = _load_checkpoint_for_state_dict(checkpoint_path)
+
+    ckpt_audio_dim = _infer_connector_audio_dim_from_state_dict(state_dict)
+    cfg_audio_dim = model_kwargs.get("audio_enc_dim")
+    if ckpt_audio_dim is not None and cfg_audio_dim != ckpt_audio_dim:
+        print(
+            "WARNING: checkpoint connector input dim does not match configured "
+            f"audio_enc_dim (ckpt={ckpt_audio_dim}, cfg={cfg_audio_dim}). "
+            "Using checkpoint dimension for model construction."
+        )
+        model_kwargs = dict(model_kwargs)
+        model_kwargs["audio_enc_dim"] = ckpt_audio_dim
+
+    model = SpeechLLMLightning(**model_kwargs)
     model.load_state_dict(state_dict, strict=False)
     n_loaded = sum(1 for k in state_dict if k in dict(model.named_parameters()))
     print(f"Loaded speech-llm checkpoint: {checkpoint_path} ({len(state_dict)} keys, "
@@ -141,14 +168,32 @@ def _extract_cli_override_dests(parser):
 
 def _cfg_get(cfg, *paths):
     """Get first existing value from one of dot-separated paths."""
+
+    def _variants(key):
+        out = {key}
+        if "_" in key:
+            out.add(key.replace("_", "-"))
+        if "-" in key:
+            out.add(key.replace("-", "_"))
+        return out
+
     for path in paths:
         cur = cfg
         ok = True
         for key in path.split("."):
-            if not isinstance(cur, dict) or key not in cur:
+            if not isinstance(cur, dict):
                 ok = False
                 break
-            cur = cur[key]
+
+            found = False
+            for cand in _variants(key):
+                if cand in cur:
+                    cur = cur[cand]
+                    found = True
+                    break
+            if not found:
+                ok = False
+                break
         if ok:
             return cur
     return None
